@@ -54,7 +54,7 @@ def shadow_expval(H, k=1):
     See :func:`~.pennylane.shadow_expval` for more usage details.
 
     Args:
-        H (:class:`~.pennylane.Observable` or list[:class:`~.pennylane.Observable`]): Observables
+        H (Union[Iterable, :class:`~.pennylane.Hamiltonian`, :class:`~.pennylane.operation.Tensor`]): Observables
             for which to compute the expectation values
         k (int): k (int): Number of equal parts to split the shadow's measurements to compute
             the median of means. ``k=1`` corresponds to simply taking the mean over all measurements.
