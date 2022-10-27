@@ -500,13 +500,15 @@ def mitigate_with_zne(
     folding_kwargs = folding_kwargs or {}
     extrapolate_kwargs = extrapolate_kwargs or {}
 
+    num_prep = len(tape._prep)
+
     if isinstance(folding, qml.batch_transform):
         folding = fold_global_tape
 
     tape = circuit.expand(stop_at=lambda op: not isinstance(op, QuantumTape))
 
     with QuantumTape() as tape_removed:
-        for op in tape._ops:
+        for op in tape.operations[num_prep:]:
             apply(op)
 
     tapes = [
@@ -521,7 +523,7 @@ def mitigate_with_zne(
     for tape_ in tapes:
         # pylint: disable=expression-not-assigned
         with QuantumTape() as t:
-            [apply(p) for p in tape._prep]
+            [apply(p) for p in tape.operations[:num_prep]]
             [apply(op) for op in tape_.operations]
             [apply(m) for m in tape.measurements]
         out_tapes.append(t)

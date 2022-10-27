@@ -20,6 +20,7 @@ executed by a device.
 import contextlib
 import copy
 from collections import Counter, defaultdict
+from itertools import takewhile
 from typing import List, Union
 
 import pennylane as qml
@@ -161,10 +162,10 @@ class QuantumScript:
     """Whether or not to queue the object. Assumed ``False`` for a vanilla Quantum Script, but may be
     True for its child Quantum Tape."""
 
-    def __init__(self, ops=None, measurements=None, prep=None, name=None, _update=True):
+    def __init__(self, ops=None, measurements=None, name=None, _update=True):
         self.name = name
-        self._prep = [] if prep is None else list(prep)
-        self._ops = [] if ops is None else list(ops)
+
+        self._operations = [] if ops is None else list(ops)
         self._measurements = [] if measurements is None else list(measurements)
 
         self._par_info = []
@@ -260,7 +261,12 @@ class QuantumScript:
         >>> qscript.operations
         [QubitStateVector([0, 1], wires=[0]), RX(0.432, wires=[0])]
         """
-        return self._prep + self._ops
+        return self._operations
+
+    @property
+    def _prep(self):
+        """Any prep operations present."""
+        return list(takewhile(lambda op: op._queue_category == "_prep", self.operations))
 
     @property
     def observables(self) -> List[Union[MeasurementProcess, Observable]]:
@@ -961,18 +967,16 @@ class QuantumScript:
             # Perform a shallow copy of all operations in the state prep, operation, and measurement
             # queues. The operations will continue to share data with the original tape operations
             # unless modified.
-            _prep = [copy.copy(op) for op in self._prep]
-            _ops = [copy.copy(op) for op in self._ops]
+            _operations = [copy.copy(op) for op in self._operations]
             _measurements = [copy.copy(op) for op in self.measurements]
         else:
             # Perform a shallow copy of the state prep, operation, and measurement queues. The
             # operations within the queues will be references to the original tape operations;
             # changing the original operations will always alter the operations on the copied tape.
-            _prep = self._prep.copy()
-            _ops = self._ops.copy()
+            _operations = self._operations.copy()
             _measurements = self.measurements.copy()
 
-        new_qscript = self.__class__(ops=_ops, measurements=_measurements, prep=_prep)
+        new_qscript = self.__class__(ops=_operations, measurements=_measurements)
         new_qscript._graph = None if copy_operations else self._graph
         new_qscript._specs = None
         new_qscript.wires = copy.copy(self.wires)
@@ -1052,9 +1056,12 @@ class QuantumScript:
         Returns:
             ~.QuantumScript: the adjointed script
         """
+        num_prep = len(self.prep)
         with qml.QueuingManager.stop_recording():
-            ops_adj = [qml.adjoint(op, lazy=False) for op in reversed(self._ops)]
-        adj = self.__class__(ops=ops_adj, measurements=self.measurements, prep=self._prep)
+            ops_adj = [qml.adjoint(op, lazy=False) for op in reversed(self.operations[num_prep:])]
+
+        new_ops = self.operations[:num_prep] + ops_adj
+        adj = self.__class__(ops=new_ops, measurements=self.measurements)
         if self.do_queue:
             qml.QueuingManager.append(adj)
         return adj

@@ -113,8 +113,7 @@ def expand_tape(qscript, depth=1, stop_at=None, expand_measurements=False):
         def stop_at(obj):  # pylint: disable=unused-argument
             return False
 
-    new_prep = []
-    new_ops = []
+    new_operations = []
     new_measurements = []
 
     # Check for observables acting on the same wire. If present, observables must be
@@ -146,7 +145,7 @@ def expand_tape(qscript, depth=1, stop_at=None, expand_measurements=False):
                     f"some of the following measurements do not commute:\n{qscript.measurements}"
                 ) from e
 
-            qscript._ops.extend(rotations)
+            qscript._operations.extend(rotations)
 
             for o, i in zip(diag_obs, qscript._obs_sharing_wires_id):
                 new_m = qml.measurements.MeasurementProcess(
@@ -155,8 +154,7 @@ def expand_tape(qscript, depth=1, stop_at=None, expand_measurements=False):
                 qscript._measurements[i] = new_m
 
     for queue, new_queue in [
-        (qscript._prep, new_prep),
-        (qscript._ops, new_ops),
+        (qscript._operations, new_operations),
         (qscript._measurements, new_measurements),
     ]:
         for obj in queue:
@@ -186,13 +184,12 @@ def expand_tape(qscript, depth=1, stop_at=None, expand_measurements=False):
             # recursively expand out the newly created qscript
             expanded_qscript = expand_tape(obj, stop_at=stop_at, depth=depth - 1)
 
-            new_prep.extend(expanded_qscript._prep)
-            new_ops.extend(expanded_qscript._ops)
-            new_measurements.extend(expanded_qscript._measurements)
+            new_operations.extend(expanded_qscript.operations)
+            new_measurements.extend(expanded_qscript.measurements)
 
     # preserves inheritance structure
     # if qscript is a QuantumTape, returned object will be a quantum tape
-    new_qscript = qscript.__class__(new_ops, new_measurements, new_prep, _update=False)
+    new_qscript = qscript.__class__(new_operations, new_measurements, _update=False)
 
     # Update circuit info
     new_qscript.wires = copy.copy(qscript.wires)
@@ -394,9 +391,10 @@ class QuantumTape(QuantumScript, AnnotatedQueue):
 
         Also calls `_update()` which sets many attributes.
         """
-        self._prep = []
-        self._ops = []
-        self._measurements = []
+        prep = []
+        ops = []
+        measurements = []
+        list_map = {"_prep": prep, "_ops": ops, "_measurements": measurements}
         list_order = {"_prep": 0, "_ops": 1, "_measurements": 2}
         current_list = "_prep"
 
@@ -410,8 +408,10 @@ class QuantumTape(QuantumScript, AnnotatedQueue):
                         f"{obj._queue_category[1:]} operation {obj} must occur prior "
                         f"to {current_list[1:]}. Please place earlier in the queue."
                     )
-                getattr(self, obj._queue_category).append(obj)
+                list_map[obj._queue_category].append(obj)
 
+        self._operations = prep + ops
+        self._measurements = measurements
         self._update()
 
     def inv(self):
