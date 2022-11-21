@@ -76,6 +76,9 @@
   - `qml.interfaces.autograd.__execute_new` -> `qml.interfaces.autograd.autograd_execute_primitive_new`
   - `qml.interfaces.autograd._vjp_new` -> `qml.interfaces.autograd.autograd_vjp_primitive_new`
 
+  - `qml.interfaces.torch.execute` -> `qml.interfaces.torch.torch_execute`
+  - `qml.interfaces.tf.execute` -> `qml.interfaces.tf.tf_execute`
+
 <h3>Deprecations</h3>
 
 Deprecations cycles are tracked at [doc/developement/deprecations.rst](https://docs.pennylane.ai/en/latest/development/deprecations.html).

@@ -63,10 +63,9 @@ def _to_tensors(x):
     Convert a nested tuple structure of arrays into a nested tuple
     structure of TF tensors
     """
-    if not isinstance(x, tuple):
-        return tf.convert_to_tensor(x)
-
-    return tuple(tf.convert_to_tensor(x_) for x_ in x)
+    if isinstance(x, tuple):
+        return tuple(tf.convert_to_tensor(x_) for x_ in x)
+    return tf.convert_to_tensor(x)
 
 
 def _res_restructured(res, tapes):
@@ -90,7 +89,7 @@ def _jac_restructured(jacs, tapes):
     """
     start = 0
     jacs_nested = []
-    for i, tape in enumerate(tapes):
+    for tape in tapes:
         num_meas = len(tape.measurements)
         num_params = len(tape.trainable_params)
 
@@ -107,7 +106,9 @@ def _jac_restructured(jacs, tapes):
     return tuple(jacs_nested)
 
 
-def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2, mode=None):
+def tf_execute(
+    tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2, mode=None
+):
     """Execute a batch of tapes with TensorFlow parameters on a device.
 
     Args:
@@ -138,7 +139,7 @@ def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_d
     # pylint: disable=unused-argument
 
     if qml.active_return():
-        return _execute_new(
+        return tf_execute_new(
             tapes,
             device,
             execute_fn,
@@ -182,15 +183,11 @@ def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_d
             # when there is no sampling
             r = np.hstack(res[i]) if res[i].dtype == np.dtype("object") else res[i]
             res[i] = tf.convert_to_tensor(r)
-
-        elif isinstance(res[i], tuple):
-            res[i] = tuple(tf.convert_to_tensor(r) for r in res[i])
-
         else:
-            res[i] = tf.convert_to_tensor(qml.math.toarray(res[i]))
+            res[i] = _to_tensors(res[i])
 
     @tf.custom_gradient
-    def _execute(*parameters):  # pylint:disable=unused-argument
+    def tf_execute_primitive(*parameters):  # pylint:disable=unused-argument
         def grad_fn(*dy, **tfkwargs):
             """Returns the vector-Jacobian product with given
             parameter values and output gradient dy"""
@@ -202,71 +199,68 @@ def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_d
                 # No additional quantum evaluations needed; simply compute the VJPs directly.
                 vjps = _compute_vjp(dy, jacs)
 
-            else:
-                # Need to compute the Jacobians on the backward pass (accumulation="backward")
+            elif isinstance(gradient_fn, qml.gradients.gradient_transform):
+                # Gradient function is a gradient transform.
 
-                if isinstance(gradient_fn, qml.gradients.gradient_transform):
-                    # Gradient function is a gradient transform.
+                # Generate and execute the required gradient tapes
+                if _n == max_diff or not context.executing_eagerly():
 
-                    # Generate and execute the required gradient tapes
-                    if _n == max_diff or not context.executing_eagerly():
-
-                        with qml.tape.Unwrap(*tapes, params=params_unwrapped):
-                            vjp_tapes, processing_fn = qml.gradients.batch_vjp(
-                                tapes,
-                                dy,
-                                gradient_fn,
-                                reduction=lambda vjps, x: vjps.extend(qml.math.unstack(x)),
-                                gradient_kwargs=gradient_kwargs,
-                            )
-
-                            vjps = processing_fn(execute_fn(vjp_tapes)[0])
-
-                    else:
+                    with qml.tape.Unwrap(*tapes, params=params_unwrapped):
                         vjp_tapes, processing_fn = qml.gradients.batch_vjp(
                             tapes,
                             dy,
                             gradient_fn,
-                            reduction="extend",
+                            reduction=lambda vjps, x: vjps.extend(qml.math.unstack(x)),
                             gradient_kwargs=gradient_kwargs,
                         )
 
-                        # This is where the magic happens. Note that we call ``execute``.
-                        # This recursion, coupled with the fact that the gradient transforms
-                        # are differentiable, allows for arbitrary order differentiation.
-                        vjps = processing_fn(
-                            execute(
-                                vjp_tapes,
-                                device,
-                                execute_fn,
-                                gradient_fn,
-                                gradient_kwargs,
-                                _n=_n + 1,
-                                max_diff=max_diff,
-                            )
-                        )
+                        vjps_script_execution_results = execute_fn(vjp_tapes)[0]
+                        vjps = processing_fn(vjps_script_execution_results)
 
                 else:
-                    # Gradient function is not a gradient transform
-                    # (e.g., it might be a device method).
-                    # Note that unlike the previous branch:
-                    #
-                    # - there is no recursion here
-                    # - gradient_fn is not differentiable
-                    #
-                    # so we cannot support higher-order derivatives.
-                    with qml.tape.Unwrap(*tapes, params=params_unwrapped):
-                        vjps = _compute_vjp(dy, gradient_fn(tapes, **gradient_kwargs))
+                    vjp_tapes, processing_fn = qml.gradients.batch_vjp(
+                        tapes,
+                        dy,
+                        gradient_fn,
+                        reduction="extend",
+                        gradient_kwargs=gradient_kwargs,
+                    )
+
+                    # This is where the magic happens. Note that we call ``execute``.
+                    # This recursion, coupled with the fact that the gradient transforms
+                    # are differentiable, allows for arbitrary order differentiation.
+                    vjp_script_execution_results = tf_execute(
+                        vjp_tapes,
+                        device,
+                        execute_fn,
+                        gradient_fn,
+                        gradient_kwargs,
+                        _n=_n + 1,
+                        max_diff=max_diff,
+                    )
+                    vjps = processing_fn(vjp_script_execution_results)
+
+            else:
+                # Gradient function is not a gradient transform
+                # (e.g., it might be a device method).
+                # Note that unlike the previous branch:
+                #
+                # - there is no recursion here
+                # - gradient_fn is not differentiable
+                #
+                # so we cannot support higher-order derivatives.
+                with qml.tape.Unwrap(*tapes, params=params_unwrapped):
+                    vjps = _compute_vjp(dy, gradient_fn(tapes, **gradient_kwargs))
 
             variables = tfkwargs.get("variables", None)
             return (vjps, variables) if variables is not None else vjps
 
         return res, grad_fn
 
-    return _execute(*parameters)
+    return tf_execute_primitive(*parameters)
 
 
-def _execute_new(
+def tf_execute_new(
     tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2, mode=None
 ):
     """Execute a batch of tapes with TensorFlow parameters on a device.
@@ -324,7 +318,7 @@ def _execute_new(
             res[i] = _to_tensors(r)
 
     @tf.custom_gradient
-    def _execute(*parameters):  # pylint:disable=unused-argument
+    def tf_execute_primitive(*parameters):  # pylint:disable=unused-argument
         def grad_fn(*dy, **tfkwargs):
             """Returns the vector-Jacobian product with given
             parameter values and output gradient dy"""
@@ -340,63 +334,60 @@ def _execute_new(
                 # No additional quantum evaluations needed; simply compute the VJPs directly.
                 vjps = _compute_vjp_new(dy, jacs, multi_measurements)
 
-            else:
-                # Need to compute the Jacobians on the backward pass (accumulation="backward")
+            elif isinstance(gradient_fn, qml.gradients.gradient_transform):
+                # Gradient function is a gradient transform.
 
-                if isinstance(gradient_fn, qml.gradients.gradient_transform):
-                    # Gradient function is a gradient transform.
+                # Generate and execute the required gradient tapes
+                if _n == max_diff or not context.executing_eagerly():
 
-                    # Generate and execute the required gradient tapes
-                    if _n == max_diff or not context.executing_eagerly():
-
-                        with qml.tape.Unwrap(*tapes, params=params_unwrapped):
-                            vjp_tapes, processing_fn = qml.gradients.batch_vjp(
-                                tapes,
-                                dy,
-                                gradient_fn,
-                                reduction=lambda vjps, x: vjps.extend(qml.math.unstack(x)),
-                                gradient_kwargs=gradient_kwargs,
-                            )
-
-                            vjps = processing_fn(execute_fn(vjp_tapes)[0])
-
-                    else:
+                    with qml.tape.Unwrap(*tapes, params=params_unwrapped):
                         vjp_tapes, processing_fn = qml.gradients.batch_vjp(
                             tapes,
                             dy,
                             gradient_fn,
-                            reduction="extend",
+                            reduction=lambda vjps, x: vjps.extend(qml.math.unstack(x)),
                             gradient_kwargs=gradient_kwargs,
                         )
 
-                        # This is where the magic happens. Note that we call ``execute``.
-                        # This recursion, coupled with the fact that the gradient transforms
-                        # are differentiable, allows for arbitrary order differentiation.
-                        vjps = processing_fn(
-                            execute(
-                                vjp_tapes,
-                                device,
-                                execute_fn,
-                                gradient_fn,
-                                gradient_kwargs,
-                                _n=_n + 1,
-                                max_diff=max_diff,
-                            )
-                        )
+                        vjps_script_results = execute_fn(vjp_tapes)[0]
+                        vjps = processing_fn(vjps_script_results)
 
                 else:
-                    # Gradient function is not a gradient transform
-                    # (e.g., it might be a device method).
-                    # Note that unlike the previous branch:
-                    #
-                    # - there is no recursion here
-                    # - gradient_fn is not differentiable
-                    #
-                    # so we cannot support higher-order derivatives.
-                    with qml.tape.Unwrap(*tapes, params=params_unwrapped):
-                        jac = gradient_fn(tapes, **gradient_kwargs)
+                    vjp_tapes, processing_fn = qml.gradients.batch_vjp(
+                        tapes,
+                        dy,
+                        gradient_fn,
+                        reduction="extend",
+                        gradient_kwargs=gradient_kwargs,
+                    )
 
-                    vjps = _compute_vjp_new(dy, jac, multi_measurements)
+                    # This is where the magic happens. Note that we call ``execute``.
+                    # This recursion, coupled with the fact that the gradient transforms
+                    # are differentiable, allows for arbitrary order differentiation.
+                    jvp_script_results = tf_execute(
+                        vjp_tapes,
+                        device,
+                        execute_fn,
+                        gradient_fn,
+                        gradient_kwargs,
+                        _n=_n + 1,
+                        max_diff=max_diff,
+                    )
+                    vjps = processing_fn(jvp_script_results)
+
+            else:
+                # Gradient function is not a gradient transform
+                # (e.g., it might be a device method).
+                # Note that unlike the previous branch:
+                #
+                # - there is no recursion here
+                # - gradient_fn is not differentiable
+                #
+                # so we cannot support higher-order derivatives.
+                with qml.tape.Unwrap(*tapes, params=params_unwrapped):
+                    jac = gradient_fn(tapes, **gradient_kwargs)
+
+                vjps = _compute_vjp_new(dy, jac, multi_measurements)
 
             # filter out untrainable parameters if they happen to appear in the vjp
             vjps = [vjp for vjp in vjps if 0 not in qml.math.shape(vjp)]
@@ -406,4 +397,4 @@ def _execute_new(
 
         return res, grad_fn
 
-    return _execute(*parameters)
+    return tf_execute_primitive(*parameters)

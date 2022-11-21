@@ -173,12 +173,14 @@ def cache_execute(fn: Callable, cache, pass_kwargs=False, return_tuple=True, exp
                     closure = inspect.getclosurevars(closure["original_fn"]).nonlocals
 
                 # retrieve the captured context manager instance (for set_shots)
-                if "self" in closure and isinstance(closure["self"], _GeneratorContextManager):
-                    # retrieve the shots from the arguments or device instance
-                    if closure["self"].func.__name__ == "set_shots":
-                        dev, shots = closure["self"].args
-                        shots = dev.shots if shots is False else shots
-                        finite_shots = isinstance(shots, int)
+                if (
+                    "self" in closure
+                    and isinstance(closure["self"], _GeneratorContextManager)
+                    and closure["self"].func.__name__ == "set_shots"
+                ):
+                    dev, shots = closure["self"].args
+                    shots = dev.shots if shots is False else shots
+                    finite_shots = isinstance(shots, int)
 
                 if finite_shots and getattr(cache, "_persistent_cache", True):
                     warnings.warn(
@@ -371,27 +373,25 @@ def _execute_new(
     if gradient_fn is None:
         # don't unwrap if it's an interface device
         if "passthru_interface" in device.capabilities() or device.short_name == "default.mixed":
-            return batch_fn(
-                qml.interfaces.cache_execute(
-                    batch_execute, cache, return_tuple=False, expand_fn=expand_fn
-                )(tapes)
-            )
-        with qml.tape.Unwrap(*tapes):
-            res = qml.interfaces.cache_execute(
+            execution_results = cache_execute(
                 batch_execute, cache, return_tuple=False, expand_fn=expand_fn
             )(tapes)
+            return batch_fn(execution_results)
+        with qml.tape.Unwrap(*tapes):
+            res = cache_execute(batch_execute, cache, return_tuple=False, expand_fn=expand_fn)(
+                tapes
+            )
 
         return batch_fn(res)
 
     if gradient_fn == "backprop" or interface is None:
-        return batch_fn(
-            qml.interfaces.cache_execute(
-                batch_execute, cache, return_tuple=False, expand_fn=expand_fn
-            )(tapes)
-        )
+        execution_results = cache_execute(
+            batch_execute, cache, return_tuple=False, expand_fn=expand_fn
+        )(tapes)
+        return batch_fn(execution_results)
 
     # the default execution function is batch_execute
-    execute_fn = qml.interfaces.cache_execute(batch_execute, cache, expand_fn=expand_fn)
+    execute_fn = cache_execute(batch_execute, cache, expand_fn=expand_fn)
     _mode = "backward"
 
     if gradient_fn == "device":
@@ -416,11 +416,14 @@ def _execute_new(
 
         elif mode == "backward":
             # disable caching on the forward pass
-            execute_fn = qml.interfaces.cache_execute(batch_execute, cache=None)
+            execute_fn = cache_execute(batch_execute, cache=None)
 
             # replace the backward gradient computation
-            gradient_fn = qml.interfaces.cache_execute(
-                set_shots(device, override_shots)(device.gradients),
+            device_gradient_with_overridden_shots = set_shots(device, override_shots)(
+                device.gradients
+            )
+            gradient_fn = cache_execute(
+                device_gradient_with_overridden_shots,
                 cache,
                 pass_kwargs=True,
                 return_tuple=False,
@@ -454,11 +457,11 @@ def _execute_new(
                 interface_execute = partial(tf_interface_execute, mode=_mode)
 
             else:
-                from .tensorflow import execute as interface_execute  # pragma: no cover
+                from .tensorflow import tf_execute as interface_execute  # pragma: no cover
 
         elif mapped_interface == "torch":
             # TODO: remove pragmas when Torch is supported
-            from .torch import execute as interface_execute  # pragma: no cover
+            from .torch import torch_execute as interface_execute  # pragma: no cover
 
         elif mapped_interface == "jax":
             interface_execute = _get_jax_execute_fn(interface, tapes)
@@ -636,27 +639,27 @@ def execute(
     if gradient_fn is None:
         # don't unwrap if it's an interface device
         if "passthru_interface" in device.capabilities():
-            return batch_fn(
-                qml.interfaces.cache_execute(
-                    batch_execute, cache, return_tuple=False, expand_fn=expand_fn
-                )(tapes)
-            )
-        with qml.tape.Unwrap(*tapes):
-            res = qml.interfaces.cache_execute(
+            cache_execution_fn = cache_execute(
                 batch_execute, cache, return_tuple=False, expand_fn=expand_fn
-            )(tapes)
+            )
+            execution_results = cache_execution_fn(tapes)
+            return batch_fn(execution_results)
+        with qml.tape.Unwrap(*tapes):
+            res = cache_execute(batch_execute, cache, return_tuple=False, expand_fn=expand_fn)(
+                tapes
+            )
 
         return batch_fn(res)
 
     if gradient_fn == "backprop" or interface is None:
-        return batch_fn(
-            qml.interfaces.cache_execute(
-                batch_execute, cache, return_tuple=False, expand_fn=expand_fn
-            )(tapes)
+        cache_execution_fn = cache_execute(
+            batch_execute, cache, return_tuple=False, expand_fn=expand_fn
         )
+        execution_results = cache_execution_fn(tapes)
+        return batch_fn(execution_results)
 
     # the default execution function is batch_execute
-    execute_fn = qml.interfaces.cache_execute(batch_execute, cache, expand_fn=expand_fn)
+    execute_fn = cache_execute(batch_execute, cache, expand_fn=expand_fn)
     _mode = "backward"
 
     if gradient_fn == "device":
@@ -681,11 +684,12 @@ def execute(
 
         elif mode == "backward":
             # disable caching on the forward pass
-            execute_fn = qml.interfaces.cache_execute(batch_execute, cache=None)
+            execute_fn = cache_execute(batch_execute, cache=None)
 
             # replace the backward gradient computation
-            gradient_fn = qml.interfaces.cache_execute(
-                set_shots(device, override_shots)(device.gradients),
+            gradients_with_overridden_shots = set_shots(device, override_shots)(device.gradients)
+            gradient_fn = cache_execute(
+                gradients_with_overridden_shots,
                 cache,
                 pass_kwargs=True,
                 return_tuple=False,
