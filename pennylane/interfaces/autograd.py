@@ -23,7 +23,9 @@ import pennylane as qml
 from pennylane import numpy as np
 
 
-def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2, mode=None):
+def autograd_execute(
+    tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2, mode=None
+):
     """Execute a batch of tapes with Autograd parameters on a device.
 
     Args:
@@ -52,7 +54,7 @@ def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_d
         the returned list corresponds in order to the provided tapes.
     """
     if qml.active_return():
-        return _execute_new(
+        return autograd_execute_new(
             tapes,
             device,
             execute_fn,
@@ -75,7 +77,7 @@ def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_d
         [autograd.builtins.list(t.get_parameters()) for t in tapes]
     )
 
-    return _execute(
+    return autograd_execute_primitive(
         parameters,
         tapes=tapes,
         device=device,
@@ -88,7 +90,7 @@ def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_d
 
 
 @autograd.extend.primitive
-def _execute(
+def autograd_execute_primitive(
     parameters,
     tapes=None,
     device=None,
@@ -143,7 +145,7 @@ def _execute(
     return res, jacs
 
 
-def vjp(
+def autograd_vjp_primitive(
     ans,
     parameters,
     tapes=None,
@@ -244,7 +246,7 @@ def vjp(
                     # This recursion, coupled with the fact that the gradient transforms
                     # are differentiable, allows for arbitrary order differentiation.
                     vjps = processing_fn(
-                        execute(
+                        autograd_execute(
                             vjp_tapes,
                             device,
                             execute_fn,
@@ -280,13 +282,13 @@ def vjp(
     return grad_fn
 
 
-autograd.extend.defvjp(_execute, vjp, argnums=[0])
+autograd.extend.defvjp(autograd_execute_primitive, autograd_vjp_primitive, argnums=[0])
 
 
 #################
 
 
-def _execute_new(
+def autograd_execute_new(
     tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2, mode=None
 ):
     """Execute a batch of tapes with Autograd parameters on a device.
@@ -327,7 +329,7 @@ def _execute_new(
     parameters = autograd.builtins.tuple(
         [autograd.builtins.list(t.get_parameters()) for t in tapes]
     )
-    return __execute_new(
+    return autograd_execute_primitive_new(
         parameters,
         tapes=tapes,
         device=device,
@@ -340,7 +342,7 @@ def _execute_new(
 
 
 @autograd.extend.primitive
-def __execute_new(
+def autograd_execute_primitive_new(
     parameters,
     tapes=None,
     device=None,
@@ -376,7 +378,7 @@ def __execute_new(
     return res, jacs
 
 
-def _vjp_new(
+def autograd_vjp_primitive_new(
     ans,
     parameters,
     tapes=None,
@@ -479,7 +481,7 @@ def _vjp_new(
                     # This recursion, coupled with the fact that the gradient transforms
                     # are differentiable, allows for arbitrary order differentiation.
                     vjps = processing_fn(
-                        _execute_new(
+                        autograd_execute_new(
                             vjp_tapes,
                             device,
                             execute_fn,
@@ -527,4 +529,4 @@ def _compute_vjps_autograd(jacs, dy, multi_measurements):
     return vjps
 
 
-autograd.extend.defvjp(__execute_new, _vjp_new, argnums=[0])
+autograd.extend.defvjp(autograd_execute_new, autograd_vjp_primitive_new, argnums=[0])

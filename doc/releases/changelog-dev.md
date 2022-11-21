@@ -67,6 +67,15 @@
 * Python 3.7 support is no longer maintained.
   [(#3276)](https://github.com/PennyLaneAI/pennylane/pull/3276)
 
+* Private functions within the `interfaces` module have been renamed.
+
+  - `qml.interfaces.autograd.execute` -> `qml.interfaces.autograd.autograd_execute`
+  - `qml.interfaces.autograd._execute` -> `qml.interfaces.autograd.autograd_execute_primitive`
+  - `qml.interfaces.autograd.vjp` -> `qml.interfaces.autograd.autograd_vjp_primitive`
+  - `qml.interfaces.autograd._execute_new` -> `qml.interfaces.autograd.autograd_execute_new`
+  - `qml.interfaces.autograd.__execute_new` -> `qml.interfaces.autograd.autograd_execute_primitive_new`
+  - `qml.interfaces.autograd._vjp_new` -> `qml.interfaces.autograd.autograd_vjp_primitive_new`
+
 <h3>Deprecations</h3>
 
 Deprecations cycles are tracked at [doc/developement/deprecations.rst](https://docs.pennylane.ai/en/latest/development/deprecations.html).

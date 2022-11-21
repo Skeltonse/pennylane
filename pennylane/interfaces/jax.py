@@ -62,7 +62,9 @@ def get_jax_interface_name(tapes):
     return "jax"
 
 
-def execute(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=1, mode=None):
+def jax_execute(
+    tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=1, mode=None
+):
     """Execute a batch of tapes with JAX parameters on a device.
 
     Args:
@@ -376,7 +378,7 @@ def _execute_fwd(
     return res
 
 
-def execute_new(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2):
+def jax_execute_new(tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=2):
     """Execute a batch of tapes with JAX parameters on a device.
 
     Args:
@@ -490,7 +492,7 @@ def _execute_bwd_new(
                 )
 
                 jvps = processing_fn(
-                    execute_new(
+                    jax_execute_new(
                         jvp_tapes,
                         device,
                         execute_fn,

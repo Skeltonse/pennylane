@@ -440,28 +440,30 @@ def _execute_new(
         ) from e
     try:
         if mapped_interface == "autograd":
-            from .autograd import execute as _execute
+            from .autograd import autograd_execute as interface_execute
 
         elif mapped_interface == "tf":
             # TODO: remove pragmas when TF is supported
             import tensorflow as tf  # pragma: no cover
 
             if not tf.executing_eagerly() or "autograph" in interface:  # pragma: no cover
-                from .tensorflow_autograph import execute as _execute  # pragma: no cover
+                from .tensorflow_autograph import (
+                    execute as tf_interface_execute,
+                )  # pragma: no cover
 
-                _execute = partial(_execute, mode=_mode)
+                interface_execute = partial(tf_interface_execute, mode=_mode)
 
             else:
-                from .tensorflow import execute as _execute  # pragma: no cover
+                from .tensorflow import execute as interface_execute  # pragma: no cover
 
         elif mapped_interface == "torch":
             # TODO: remove pragmas when Torch is supported
-            from .torch import execute as _execute  # pragma: no cover
+            from .torch import execute as interface_execute  # pragma: no cover
 
         elif mapped_interface == "jax":
-            _execute = _get_jax_execute_fn(interface, tapes)
+            interface_execute = _get_jax_execute_fn(interface, tapes)
 
-        res = _execute(
+        res = interface_execute(
             tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=max_diff
         )
 
@@ -703,25 +705,25 @@ def execute(
         ) from e
     try:
         if mapped_interface == "autograd":
-            from .autograd import execute as _execute
+            from .autograd import autograd_execute as interface_execute
         elif mapped_interface == "tf":
             import tensorflow as tf
 
             if not tf.executing_eagerly() or "autograph" in interface:
-                from .tensorflow_autograph import execute as _execute
+                from .tensorflow_autograph import execute as interface_execute
             else:
-                from .tensorflow import execute as _execute
+                from .tensorflow import execute as interface_execute
         elif mapped_interface == "torch":
-            from .torch import execute as _execute
+            from .torch import execute as interface_execute
         else:  # is jax
-            _execute = _get_jax_execute_fn(interface, tapes)
+            interface_execute = _get_jax_execute_fn(interface, tapes)
     except ImportError as e:
         raise qml.QuantumFunctionError(
             f"{mapped_interface} not found. Please install the latest "
             f"version of {mapped_interface} to enable the '{mapped_interface}' interface."
         ) from e
 
-    res = _execute(
+    res = interface_execute(
         tapes, device, execute_fn, gradient_fn, gradient_kwargs, _n=1, max_diff=max_diff, mode=_mode
     )
 
@@ -740,10 +742,9 @@ def _get_jax_execute_fn(interface: str, tapes: Sequence[QuantumTape]):
         interface = get_jax_interface_name(tapes)
 
     if interface == "jax-jit":
-        from .jax_jit import execute as _execute
+        from .jax_jit import execute as interface_execute
+    elif qml.active_return():
+        from .jax import jax_execute_new as interface_execute
     else:
-        if qml.active_return():
-            from .jax import execute_new as _execute
-        else:
-            from .jax import execute as _execute
-    return _execute
+        from .jax import jax_execute as interface_execute
+    return interface_execute
