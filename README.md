@@ -120,8 +120,8 @@ PennyLane, quantum computing concepts, and more.
 We welcome contributions—simply fork the PennyLane repository, and then make a [pull
 request](https://help.github.com/articles/about-pull-requests/) containing your contribution. All
 contributors to PennyLane will be listed as authors on the releases. All users who contribute
-significantly to the code (new plugins, new functionality, etc.) will be listed on the PennyLane
-arXiv paper.
+significantly to the code (new plugins, new functionality, etc.) will be listed on the [PennyLane
+arXiv paper](https://arxiv.org/abs/1811.04968).
 
 We also encourage bug reports, suggestions for new features and enhancements, and even links to cool
 projects or applications built on PennyLane.
