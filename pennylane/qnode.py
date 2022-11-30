@@ -27,6 +27,9 @@ from pennylane import Device
 from pennylane.interfaces import INTERFACE_MAP, SUPPORTED_INTERFACES, set_shots
 from pennylane.tape import QuantumTape
 
+from pennylane import workflow
+from pennylane.workflow.execution_config import ExecutionConfig
+
 
 class QNode:
     """Represents a quantum node in the hybrid computational graph.
@@ -158,6 +161,8 @@ class QNode:
     >>> dev = qml.device("default.qubit", wires=1)
     >>> qnode = qml.QNode(circuit, dev)
     """
+
+    _execution_config = ExecutionConfig()
 
     def __init__(
         self,
@@ -519,6 +524,23 @@ class QNode:
 
     qtape = tape  # for backwards compatibility
 
+    def _processing_validation_workflow(self) -> None:
+        workflow_steps = [
+            workflow.set_trainable_params,
+            workflow.validate_SparseHamiltonian_backprop,
+            workflow.defer_measurements,
+            workflow.validate_qfunc_output_matches_measurements,
+        ]
+
+        batch_script = [self._tape]
+        config = self._execution_config
+
+        for step in workflow_steps:
+            batch_script, config = step(batch_script, config)
+
+        self._tape = batch_script[0]
+        self._execution_config = config
+
     def construct(self, args, kwargs):
         """Call the quantum function with a tape context, ensuring the operations get queued."""
 
@@ -528,60 +550,17 @@ class QNode:
             self._qfunc_output = self.func(*args, **kwargs)
         self._tape._qfunc_output = self._qfunc_output
 
-        params = self.tape.get_parameters(trainable_only=False)
-        self.tape.trainable_params = qml.math.get_trainable_indices(params)
+        self._processing_validation_workflow()
 
-        if isinstance(self._qfunc_output, qml.numpy.ndarray):
-            measurement_processes = tuple(self.tape.measurements)
-        elif not isinstance(self._qfunc_output, Sequence):
-            measurement_processes = (self._qfunc_output,)
-        else:
-            measurement_processes = self._qfunc_output
-
-        if not all(
-            isinstance(m, qml.measurements.MeasurementProcess) for m in measurement_processes
-        ):
-            raise qml.QuantumFunctionError(
-                "A quantum function must return either a single measurement, "
-                "or a nonempty sequence of measurements."
-            )
-
-        terminal_measurements = [
-            m for m in self.tape.measurements if m.return_type != qml.measurements.MidMeasure
-        ]
-        if any(ret != m for ret, m in zip(measurement_processes, terminal_measurements)):
-            raise qml.QuantumFunctionError(
-                "All measurements must be returned in the order they are measured."
-            )
-
-        for obj in self.tape.operations + self.tape.observables:
-
+        # what happens when wires are dynamically allocated on the device?
+        for obj in self.tape:
+            # What if device has dynamic wires allocation?
             if (
                 getattr(obj, "num_wires", None) is qml.operation.WiresEnum.AllWires
                 and len(obj.wires) != self.device.num_wires
             ):
                 # check here only if enough wires
                 raise qml.QuantumFunctionError(f"Operator {obj.name} must act on all wires")
-
-            # pylint: disable=no-member
-            if isinstance(obj, qml.ops.qubit.SparseHamiltonian) and self.gradient_fn == "backprop":
-                raise qml.QuantumFunctionError(
-                    "SparseHamiltonian observable must be used with the parameter-shift"
-                    " differentiation method"
-                )
-
-        # Apply the deferred measurement principle if the device doesn't
-        # support mid-circuit measurements natively
-        # TODO:
-        # 1. Change once mid-circuit measurements are not considered as tape
-        # operations
-        # 2. Move this expansion to Device (e.g., default_expand_fn or
-        # batch_transform method)
-        if any(
-            getattr(obs, "return_type", None) == qml.measurements.MidMeasure
-            for obs in self.tape.operations
-        ):
-            self._tape = qml.defer_measurements(self._tape)
 
         if self.expansion_strategy == "device":
             self._tape = self.device.expand_fn(self.tape, max_expansion=self.max_expansion)
@@ -592,11 +571,16 @@ class QNode:
             self._tape = self.gradient_fn.expand_fn(self._tape)
 
     def __call__(self, *args, **kwargs):  # pylint: disable=too-many-branches, too-many-statements
-        override_shots = False
+
+        self._execution_config = workflow.ExecutionConfig(diff_method=self.diff_method)
+
         old_interface = self.interface
         if old_interface == "auto":
             self.interface = qml.math.get_interface(*args, *list(kwargs.values()))
 
+        self._execution_config.interface = self.interface
+
+        override_shots = False
         if not self._qfunc_uses_shots_arg:
             # If shots specified in call but not in qfunc signature,
             # interpret it as device shots value for this call.
@@ -613,6 +597,7 @@ class QNode:
                 # pylint: disable=not-callable
                 # update the gradient function
                 set_shots(self._original_device, override_shots)(self._update_gradient_fn)()
+                self._execution_config.shots = override_shots
 
         # construct the tape
         self.construct(args, kwargs)
