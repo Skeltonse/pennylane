@@ -1,4 +1,4 @@
-# Copyright 2018-2021 Xanadu Quantum Technologies Inc.
+# Copyright 2018-2023 Xanadu Quantum Technologies Inc.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-This module contains templates, which are pre-coded routines that can be used in a quantum node.
+A module for performing QSVT with PennyLane.
 """
-
-from .broadcast import *
-from .layer import *
-from .layers import *
-from .embeddings import *
-from .subroutines import *
-from .state_preparations import *
-from .tensornetworks import *
-from .swapnetworks import *
-from .qsvt import *
+from .qsvt_ops import BlockEncode
