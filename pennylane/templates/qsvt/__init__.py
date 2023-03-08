@@ -15,3 +15,34 @@
 A module for performing QSVT with PennyLane.
 """
 from .qsvt_ops import BlockEncode
+from pennylane.ops.op_math import adjoint
+from pennylane.ops.qubit import PCPhase
+
+
+def qsvt(A, phi_vect, wires):
+    """Executes the operations to perform the qsvt protocol"""
+    d = len(phi_vect)
+    if getattr(A, "shape", None) is None or len(A.shape) != 2:
+        c = 1
+        r = 1
+    else:
+        c, r = A.shape
+
+    lst_operations = []
+
+    if d % 2 == 0:
+        for i in range(1, d // 2 + 1):
+            lst_operations.append(BlockEncode(A, wires=wires))
+            lst_operations.append(PCPhase(phi_vect[2 * i - 1], r, wires=wires))
+            lst_operations.append(adjoint(BlockEncode(A, wires=wires)))
+            lst_operations.append(PCPhase(phi_vect[2 * i - 2], c, wires=wires))
+
+    else:
+        for i in range(1, (d - 1) // 2 + 1):
+            lst_operations.append(BlockEncode(A, wires=wires))
+            lst_operations.append(PCPhase(phi_vect[2 * i], r, wires=wires))
+            lst_operations.append(adjoint(BlockEncode(A, wires=wires)))
+            lst_operations.append(PCPhase(phi_vect[2 * i - 1], c, wires=wires))
+
+        lst_operations.append(BlockEncode(A, wires=wires))
+        lst_operations.append(PCPhase(phi_vect[0], r, wires=wires))
