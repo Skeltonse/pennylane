@@ -17,12 +17,23 @@ A module which implements basic QSVT capabilities
 import copy
 
 import pennylane.numpy as np
-from pennylane.ops import Identity, PCPhase, BlockEncode, adjoint, s_prod, exp
+from pennylane.ops import Identity, PCPhase, BlockEncode, adjoint, s_prod, exp, QubitUnitary
 
 
-def qsvt(A, phi_vect, wires, convention=None):
+# def _get_be(A, wires, direct=False):
+#     if direct:
+#         # return QubitUnitary(A, wires=wires)
+#         return BlockEncode(np.real(A[0, 0]), wires=wires)
+#     return BlockEncode(A, wires=wires)
+
+
+def qsvt(A, phi_vect, wires, convention=None, direct_be=False):
     """Applies the QSVT sequence to A"""
     d = len(phi_vect) - 1
+
+    if direct_be:
+        A = np.real(A[0, 0])
+
     shape_a = getattr(A, "shape", None)
 
     dim_tilde, dim = (1, 1) if not shape_a else shape_a
@@ -31,14 +42,14 @@ def qsvt(A, phi_vect, wires, convention=None):
         phi_vect = _qsp_to_qsvt(phi_vect)
         global_phase = d % 4
 
-    if global_phase == 1:
-        exp(Identity(wires=wires), 1j * (3*np.pi / 2))
+        if global_phase == 1:
+            exp(Identity(wires=wires), 1j * (3*np.pi / 2))
 
-    elif global_phase == 2:
-        exp(Identity(wires=wires), 1j * np.pi)
+        elif global_phase == 2:
+            exp(Identity(wires=wires), 1j * np.pi)
 
-    elif global_phase == 3:
-        exp(Identity(wires=wires), 1j * np.pi / 2)
+        elif global_phase == 3:
+            exp(Identity(wires=wires), 1j * np.pi / 2)
 
     PCPhase(phi_vect[-1], dim, wires=wires)
 
@@ -57,6 +68,47 @@ def qsvt(A, phi_vect, wires, convention=None):
             PCPhase(phi_vect[2*k - 1], dim, wires=wires)  # Pi
 
         BlockEncode(A, wires=wires)  # U
+        PCPhase(phi_vect[0], dim_tilde, wires=wires)  # Pi_tilde
+
+    return
+
+
+def custom_qsvt(A, phi_vect, wires, custom_phi_vect, custom_be, convention=None):
+    """Applies the QSVT sequence to A"""
+    d = len(phi_vect) - 1
+
+    dim_tilde, dim = (1, 1)
+
+    if convention == "Wx":  # Convert to Wx convention!
+        phi_vect = _qsp_to_qsvt(phi_vect)
+        global_phase = d % 4
+
+        if global_phase == 1:
+            exp(Identity(wires=wires), 1j * (3*np.pi / 2))
+
+        elif global_phase == 2:
+            exp(Identity(wires=wires), 1j * np.pi)
+
+        elif global_phase == 3:
+            exp(Identity(wires=wires), 1j * np.pi / 2)
+
+    PCPhase(phi_vect[-1], dim, wires=wires)
+
+    if d % 2 == 0:
+        for k in range(1, (d // 2) + 1)[::-1]:
+            custom_be(A, custom_phi_vect, wires=wires, convention=convention)  # U
+            PCPhase(phi_vect[2*k - 1], dim_tilde, wires=wires)  # Pi_tilde
+            adjoint(custom_be)(A, custom_phi_vect, wires=wires, convention=convention)  # U^dag
+            PCPhase(phi_vect[2*k - 2], dim, wires=wires)  # Pi
+
+    else:
+        for k in range(1, ((d - 1) // 2) + 1)[::-1]:
+            custom_be(A, custom_phi_vect, wires=wires, convention=convention)  # U
+            PCPhase(phi_vect[2*k], dim_tilde, wires=wires)  # Pi_tilde
+            adjoint(custom_be)(A, custom_phi_vect, wires=wires, convention=convention)  # U^dag
+            PCPhase(phi_vect[2*k - 1], dim, wires=wires)  # Pi
+
+        custom_be(A, custom_phi_vect, wires=wires, convention=convention)  # U
         PCPhase(phi_vect[0], dim_tilde, wires=wires)  # Pi_tilde
 
     return
