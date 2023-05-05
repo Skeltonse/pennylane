@@ -22,8 +22,8 @@ from collections.abc import Iterable
 from copy import copy
 import functools
 from typing import List
+import time
 import scipy
-
 
 import pennylane as qml
 from pennylane import numpy as np
@@ -348,6 +348,7 @@ class Hamiltonian(Observable):
                 self.ops, grouping_type=grouping_type, method=method
             )
 
+    # @profile
     def sparse_matrix(self, wire_order=None):
         r"""Computes the sparse matrix representation of a Hamiltonian in the computational basis.
 
@@ -383,11 +384,17 @@ class Hamiltonian(Observable):
             wires = wire_order
         n = len(wires)
         matrix = scipy.sparse.csr_matrix((2**n, 2**n), dtype="complex128")
+        _matrix = scipy.sparse.csr_matrix((2**n, 2**n), dtype="complex128")
 
         coeffs = qml.math.toarray(self.data)
 
+        buffer = 10
         temp_mats = []
+        temp_ind = np.empty((2**n, buffer), dtype=int)
+        temp_dat = np.empty((2**n, buffer), dtype=complex)
+        i = 0
         for coeff, op in zip(coeffs, self.ops):
+            # print(i, op)
             obs = []
             for o in qml.operation.Tensor(op).obs:
                 if len(o.wires) > 1:
@@ -424,12 +431,25 @@ class Hamiltonian(Observable):
             )
 
             temp_mats.append(red_mat.tocsr())
+            temp_ind[:, i] = temp_mats[-1].indices
+            temp_dat[:, i] = temp_mats[-1].data
+            i += 1
             # Value of 100 arrived at empirically to balance time savings vs memory use. At this point
             # the `temp_mats` are summed into the final result and the temporary storage array is
             # cleared.
-            if (len(temp_mats) % 100) == 0:
-                matrix += sum(temp_mats)
+            if (len(temp_mats) % buffer) == 0:
+                t0 = time.time()
+                tmp = sum(temp_mats)
+                matrix += tmp
                 temp_mats = []
+                print(time.time() - t0, matrix.nnz / matrix.shape[0] / matrix.shape[1])
+                t0 = time.time()
+                _tmp = sum_sparse_matrices(temp_ind[:, 0 : i + 1], temp_dat[:, 0 : i + 1])
+                _matrix += _tmp
+                print(time.time() - t0, matrix.nnz / matrix.shape[0] / matrix.shape[1])
+                err = _tmp - tmp
+                i = 0
+                print(err.data.size)
 
         matrix += sum(temp_mats)
         return matrix
@@ -764,3 +784,43 @@ class Hamiltonian(Observable):
                 setattr(new_op, attr, value)
         new_op.hyperparameters["ops"] = new_op._ops  # pylint: disable=protected-access
         return new_op
+
+
+def sum_sparse_matrices(temp_ind, temp_dat):
+    """Returns the sum of sparse Hamiltonians in CSR format."""
+    perm = np.argsort(temp_ind, axis=1)
+    temp_ind = np.take_along_axis(temp_ind, perm, axis=1)
+    temp_dat = np.take_along_axis(temp_dat, perm, axis=1)
+    data, indices, indptr = sum_to_csr(temp_ind, temp_dat)
+    n = temp_ind.shape[0]
+    return scipy.sparse.csr_matrix((data, indices, indptr), shape=(n, n))
+
+
+def sum_to_csr(temp_ind, temp_dat):
+    """Performs the sum of sparse Hamiltonians and return the CSR arrays."""
+    nrow = temp_ind.shape[0]
+    buff = temp_ind.shape[1]
+    max_alloc = temp_ind.size
+    data = np.zeros((max_alloc), dtype=complex)
+    indices = np.empty((max_alloc), dtype=int)
+    indptr = np.empty((nrow + 1), dtype=int)
+    indptr[0] = 0
+    row_count = 0
+    for i in range(nrow):
+        cumsum = temp_dat[i, 0]
+        for j in range(1, buff):
+            if temp_ind[i, j - 1] == temp_ind[i, j]:
+                cumsum += temp_dat[i, j]
+                continue
+            if np.abs(cumsum) > 0.0:
+                indices[row_count] = temp_ind[i, j - 1]
+                data[row_count] = cumsum
+                row_count += 1
+            cumsum = temp_dat[i, j]
+        if temp_ind[i, j - 1] == temp_ind[i, j]:
+            if np.abs(cumsum) > 0.0:
+                indices[row_count] = temp_ind[i, j - 1]
+                data[row_count] = cumsum
+                row_count += 1
+        indptr[i + 1] = row_count
+    return data[: indptr[-1]], indices[: indptr[-1]], indptr
