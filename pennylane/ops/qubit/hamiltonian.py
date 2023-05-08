@@ -388,7 +388,7 @@ class Hamiltonian(Observable):
 
         coeffs = qml.math.toarray(self.data)
 
-        buffer = 10
+        buffer = 30
         temp_mats = []
         temp_ind = np.empty((2**n, buffer), dtype=int)
         temp_dat = np.empty((2**n, buffer), dtype=complex)
@@ -443,10 +443,15 @@ class Hamiltonian(Observable):
                 matrix += tmp
                 temp_mats = []
                 print(time.time() - t0, matrix.nnz / matrix.shape[0] / matrix.shape[1])
+                # t0 = time.time()
+                # perm = np.argsort(temp_ind, axis=1)
+                # temp_ind = np.take_along_axis(temp_ind, perm, axis=1)
+                # temp_dat = np.take_along_axis(temp_dat, perm, axis=1)
+                # print(time.time() - t0)
                 t0 = time.time()
                 _tmp = sum_sparse_matrices(temp_ind[:, 0 : i + 1], temp_dat[:, 0 : i + 1])
                 _matrix += _tmp
-                print(time.time() - t0, matrix.nnz / matrix.shape[0] / matrix.shape[1])
+                print(time.time() - t0)
                 err = _tmp - tmp
                 i = 0
                 print(err.data.size)
@@ -786,6 +791,7 @@ class Hamiltonian(Observable):
         return new_op
 
 
+# @profile
 def sum_sparse_matrices(temp_ind, temp_dat):
     """Returns the sum of sparse Hamiltonians in CSR format."""
     perm = np.argsort(temp_ind, axis=1)
@@ -796,6 +802,7 @@ def sum_sparse_matrices(temp_ind, temp_dat):
     return scipy.sparse.csr_matrix((data, indices, indptr), shape=(n, n))
 
 
+# @profile
 def sum_to_csr(temp_ind, temp_dat):
     """Performs the sum of sparse Hamiltonians and return the CSR arrays."""
     nrow = temp_ind.shape[0]
@@ -817,10 +824,9 @@ def sum_to_csr(temp_ind, temp_dat):
                 data[row_count] = cumsum
                 row_count += 1
             cumsum = temp_dat[i, j]
-        if temp_ind[i, j - 1] == temp_ind[i, j]:
-            if np.abs(cumsum) > 0.0:
-                indices[row_count] = temp_ind[i, j - 1]
-                data[row_count] = cumsum
-                row_count += 1
+        if temp_ind[i, j - 1] == temp_ind[i, j] and np.abs(cumsum) > 0.0:
+            indices[row_count] = temp_ind[i, j - 1]
+            data[row_count] = cumsum
+            row_count += 1
         indptr[i + 1] = row_count
     return data[: indptr[-1]], indices[: indptr[-1]], indptr
