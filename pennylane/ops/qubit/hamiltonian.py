@@ -388,7 +388,7 @@ class Hamiltonian(Observable):
 
         coeffs = qml.math.toarray(self.data)
 
-        buffer = 30
+        buffer = 10
         temp_mats = []
         temp_ind = np.empty((2**n, buffer), dtype=int)
         temp_dat = np.empty((2**n, buffer), dtype=complex)
@@ -824,8 +824,8 @@ def sum_to_csr(temp_ind, temp_dat):
                 data[row_count] = cumsum
                 row_count += 1
             cumsum = temp_dat[i, j]
-        if temp_ind[i, j - 1] == temp_ind[i, j] and np.abs(cumsum) > 0.0:
-            indices[row_count] = temp_ind[i, j - 1]
+        if np.abs(cumsum) > 0.0:
+            indices[row_count] = temp_ind[i, j]
             data[row_count] = cumsum
             row_count += 1
         indptr[i + 1] = row_count
