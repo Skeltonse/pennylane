@@ -377,15 +377,17 @@ def generate_multi_shift_rule(frequencies, shifts=None, orders=None):
 
     return _combine_shift_rules(rules)
 
+
 def _new_op(target_op, data_idx, shifts, multipliers):
-    
+
     new_params = list(target_op.data)
-    
+
     multipliers = qml.math.convert_like(multipliers, new_params[data_idx])
     shifts = qml.math.convert_like(shifts, new_params[data_idx])
 
     new_params[data_idx] = new_params[data_idx] * multipliers + shifts
     return qml.ops.functions.bind_new_parameters(target_op, new_params)
+
 
 def generate_shifted_tapes(tape, index, shifts, multipliers=None, broadcast=False):
     r"""Generate a list of tapes or a single broadcasted tape, where one marked
@@ -417,19 +419,22 @@ def generate_shifted_tapes(tape, index, shifts, multipliers=None, broadcast=Fals
 
     _, op_idx, data_idx = tape.get_operation(index)
     op_idx -= len(tape._prep)
-        
+
     if broadcast:
         ops = list(tape._ops)
         ops[op_idx] = _new_op(ops[op_idx], data_idx, shifts, multipliers)
-        return (qml.tape.QuantumScript(ops, tape.measurements, tape._prep, shots=tape.shots), )
-    
+        return (qml.tape.QuantumScript(ops, tape.measurements, tape._prep, shots=tape.shots),)
+
     new_tapes = []
     for shift, multiplier in zip(shifts, multipliers):
         ops = list(tape._ops)
         ops[op_idx] = _new_op(ops[op_idx], data_idx, shift, multiplier)
-        new_tapes.append(qml.tape.QuantumScript(ops, tape.measurements, tape._prep, shots=tape.shots) )
-        
+        new_tapes.append(
+            qml.tape.QuantumScript(ops, tape.measurements, tape._prep, shots=tape.shots)
+        )
+
     return tuple(new_tapes)
+
 
 def generate_multishifted_tapes(tape, indices, shifts, multipliers=None):
     r"""Generate a list of tapes where multiple marked trainable
