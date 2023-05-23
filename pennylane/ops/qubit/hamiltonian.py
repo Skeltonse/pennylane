@@ -25,10 +25,17 @@ from typing import List
 import time
 import scipy
 
+import numpy
+
+# import jax
+# import jax.numpy as jnp
+# from numba import njit
+
 import pennylane as qml
 from pennylane import numpy as np
 from pennylane.operation import Observable, Tensor
 from pennylane.wires import Wires
+
 
 OBS_MAP = {"PauliX": "X", "PauliY": "Y", "PauliZ": "Z", "Hadamard": "H", "Identity": "I"}
 
@@ -390,8 +397,8 @@ class Hamiltonian(Observable):
 
         buffer = 10
         temp_mats = []
-        temp_ind = np.empty((2**n, buffer), dtype=int)
-        temp_dat = np.empty((2**n, buffer), dtype=complex)
+        temp_ind = np.empty((2**n, buffer), dtype=np.int64)
+        temp_dat = np.empty((2**n, buffer), dtype=np.complex128)
         i = 0
         for coeff, op in zip(coeffs, self.ops):
             # print(i, op)
@@ -454,7 +461,7 @@ class Hamiltonian(Observable):
                 print(time.time() - t0)
                 err = _tmp - tmp
                 i = 0
-                print(err.data.size)
+                print(err.data.size, 0 if err.data.size == 0 else abs(np.max(err.data)))
 
         matrix += sum(temp_mats)
         return matrix
@@ -794,21 +801,26 @@ class Hamiltonian(Observable):
 # @profile
 def sum_sparse_matrices(temp_ind, temp_dat):
     """Returns the sum of sparse Hamiltonians in CSR format."""
-    perm = np.argsort(temp_ind, axis=1)
-    temp_ind = np.take_along_axis(temp_ind, perm, axis=1)
-    temp_dat = np.take_along_axis(temp_dat, perm, axis=1)
-    data, indices, indptr = sum_to_csr(temp_ind, temp_dat)
+    perm = numpy.argsort(temp_ind, axis=1)
+    temp_ind = numpy.take_along_axis(temp_ind, perm, axis=1)
+    temp_dat = numpy.take_along_axis(temp_dat, perm, axis=1)
     n = temp_ind.shape[0]
-    return scipy.sparse.csr_matrix((data, indices, indptr), shape=(n, n))
+    data, irow, jcol = sum_to_coo(temp_ind, temp_dat)
+    mask = numpy.where(data == 0.0)
+    data, irow, jcol = numpy.delete(data, mask), numpy.delete(irow, mask), numpy.delete(jcol, mask)
+    return scipy.sparse.csr_matrix((data, (irow, jcol)), shape=(n, n))
+    # data, indices, indptr = sum_to_csr(temp_ind, temp_dat)
+    # return scipy.sparse.csr_matrix((data, indices, indptr), shape=(n, n))
 
 
 # @profile
 def sum_to_csr(temp_ind, temp_dat):
     """Performs the sum of sparse Hamiltonians and return the CSR arrays."""
+    TOL = 0.0
     nrow = temp_ind.shape[0]
     buff = temp_ind.shape[1]
     max_alloc = temp_ind.size
-    data = np.zeros((max_alloc), dtype=complex)
+    data = np.empty((max_alloc), dtype=complex)
     indices = np.empty((max_alloc), dtype=int)
     indptr = np.empty((nrow + 1), dtype=int)
     indptr[0] = 0
@@ -819,14 +831,44 @@ def sum_to_csr(temp_ind, temp_dat):
             if temp_ind[i, j - 1] == temp_ind[i, j]:
                 cumsum += temp_dat[i, j]
                 continue
-            if np.abs(cumsum) > 0.0:
+            if np.abs(cumsum) > TOL:
                 indices[row_count] = temp_ind[i, j - 1]
                 data[row_count] = cumsum
                 row_count += 1
             cumsum = temp_dat[i, j]
-        if np.abs(cumsum) > 0.0:
+        if np.abs(cumsum) > TOL:
             indices[row_count] = temp_ind[i, j]
             data[row_count] = cumsum
             row_count += 1
         indptr[i + 1] = row_count
     return data[: indptr[-1]], indices[: indptr[-1]], indptr
+
+
+# @njit
+def sum_to_coo(temp_ind, temp_dat):
+    """Performs the sum of sparse Hamiltonians and return the CSR arrays."""
+    # TOL = 0.0
+    nrow = temp_ind.shape[0]
+    buff = temp_ind.shape[1]
+    max_alloc = temp_ind.size
+    data = numpy.zeros((max_alloc), dtype=numpy.complex128)
+    irow = numpy.zeros((max_alloc), dtype=numpy.int64)
+    jcol = numpy.zeros((max_alloc), dtype=numpy.int64)
+    count = 0
+    for i in range(nrow):
+        data[count] = temp_dat[i, 0]
+        irow[count] = i
+        jcol[count] = temp_ind[i, 0]
+        for j in range(1, buff):
+            count += (temp_ind[i, j] - temp_ind[i, j - 1]) != 0
+            data[count] += temp_dat[i, j]
+            irow[count] = i
+            jcol[count] = temp_ind[i, j]
+        count += 1
+    data, irow, jcol = data[:count], irow[:count], jcol[:count]
+    # mask = numpy.where(data == 0.0)
+    # data, irow, jcol = numpy.delete(data, mask), numpy.delete(irow, mask), numpy.delete(jcol, mask)
+    return data, irow, jcol
+
+
+# sum_to_coo_jit = jax.jit(sum_to_coo)
