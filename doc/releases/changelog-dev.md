@@ -175,6 +175,8 @@
 
 <h3>Bug fixes 🐛</h3>
 
+* Finite diff derivatives can now be computed for measurements of the state and density matrix.
+
 * Removes a patch in `interfaces/autograd.py` that checks for the `strawberryfields.gbs` device.  That device
   is pinned to PennyLane <= v0.29.0, so that patch is no longer necessary.
 

@@ -832,6 +832,42 @@ class TestFiniteDiffIntegration:
         )
         assert isinstance(res[1][1], numpy.ndarray)
 
+    def test_state(self, approx_order, strategy, validate, tol):
+        """Test that finite different derivatives work with state measurements."""
+        x = np.array(0.2)
+        circuit = qml.tape.QuantumScript([qml.RX(x, wires=0)], [qml.state()])
+
+        dev = qml.device("default.qubit", wires=1)
+
+        batch, post_processing_fn = finite_diff(
+            circuit, approx_order=approx_order, strategy=strategy, validate_params=validate
+        )
+
+        grad = post_processing_fn(dev.batch_execute(batch))
+
+        expected = np.array([-0.5 * np.sin(x / 2), -0.5j * np.cos(x / 2)])
+        assert qml.math.allclose(grad, expected, atol=tol)
+
+    def test_density_matrix(self, approx_order, strategy, validate, tol):
+        """Test that finite different derivatives work with density_matrix measurements."""
+        x = np.array(0.2)
+        circuit = qml.tape.QuantumScript([qml.RX(x, wires=0)], [qml.density_matrix(wires=0)])
+
+        dev = qml.device("default.qubit", wires=1)
+
+        batch, post_processing_fn = finite_diff(
+            circuit, approx_order=approx_order, strategy=strategy, validate_params=validate
+        )
+
+        grad = post_processing_fn(dev.batch_execute(batch))
+
+        expected00 = -np.cos(x / 2) * np.sin(x / 2)
+        expected01 = 0.5j * np.cos(x)
+        expected10 = -0.5j * np.cos(x)
+        expected11 = np.sin(x / 2) * np.cos(x / 2)
+        expected = np.array([[expected00, expected01], [expected10, expected11]])
+        assert qml.math.allclose(grad, expected, atol=tol)
+
 
 @pytest.mark.parametrize("approx_order", [2])
 @pytest.mark.parametrize("strategy", ["center"])

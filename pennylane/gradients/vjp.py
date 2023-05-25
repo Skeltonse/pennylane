@@ -151,7 +151,14 @@ def compute_vjp_single(dy, jac, num=None):
         # Single measurement with dimension e.g. probs
         else:
             jac = qml.math.stack(jac)
-            res = qml.math.tensordot(jac, dy_row, [[1], [0]])
+            print(jac)
+            print(dy_row)
+            try:
+                res = qml.math.tensordot(jac, dy_row, [[1], [0]])
+            except RuntimeError as e:
+                raise RuntimeError(
+                    "torch does not yet support finite diff derivatives of the density matrix."
+                ) from e
     return res
 
 

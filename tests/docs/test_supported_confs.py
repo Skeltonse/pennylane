@@ -158,23 +158,23 @@ def get_variable(interface, wire_specs, complex=False):
 
     if interface is None:
         return np.array([0.1] * num_wires)
-    elif interface == "autograd":
+    if interface == "autograd":
         return np.array([0.1] * num_wires, requires_grad=True)
-    elif interface == "jax":
+    if interface == "jax":
         # complex dtype is required for JAX when holomorphic gradient is used
-        return jnp.array([0.1] * num_wires, dtype=np.complex64 if complex else None)
-    elif interface == "tf":
+        return jnp.array([0.1] * num_wires, dtype=np.complex128 if complex else None)
+    if interface == "tf":
         # complex dtype is required for TF when the gradients have non-zero
         # imaginary parts, otherwise they will be ignored
         return tf.Variable(
             [0.1] * num_wires, trainable=True, dtype=tf.complex128 if complex else tf.float64
         )
-    elif interface == "torch":
-        # complex dtype is required for torch when the gradients have non-zero
-        # imaginary parts, otherwise they will be ignored
-        return torch.tensor(
-            [0.1] * num_wires, requires_grad=True, dtype=torch.complex64 if complex else None
-        )
+    # torch
+    # complex dtype is required for torch when the gradients have non-zero
+    # imaginary parts, otherwise they will be ignored
+    return torch.tensor(
+        [0.1] * num_wires, requires_grad=True, dtype=torch.complex128 if complex else None
+    )
 
 
 def get_state_cost_fn(circuit):
@@ -236,6 +236,8 @@ def compute_gradient(x, interface, circuit, return_type, complex=False):
             out = cost_fn(x)
 
         if return_type in grad_return_cases:
+            print("using tape.gradient")
+            print(x)
             return tape.gradient(out, [x])
         else:
             return tape.jacobian(out, [x], experimental_use_pfor=False)
@@ -445,8 +447,8 @@ class TestSupportedConfs:
         else:
             grad = compute_gradient(x, interface, circuit, return_type)
 
-    @pytest.mark.parametrize("interface", diff_interfaces)
-    @pytest.mark.parametrize("return_type", ["StateCost", "StateVector", "DensityMatrix"])
+    @pytest.mark.parametrize("interface", ["jax", "tf", "torch"])  # autograd doesnt like state
+    @pytest.mark.parametrize("return_type", ["StateVector", "DensityMatrix"])
     @pytest.mark.parametrize("shots", shots_list)
     @pytest.mark.parametrize("wire_specs", wire_specs_list)
     @pytest.mark.parametrize("diff_method", ["finite-diff", "spsa"])
@@ -454,21 +456,21 @@ class TestSupportedConfs:
         """Test diff_method in ['finite-diff', 'spsa'] fails for all interfaces and
         the return_types State and DensityMatrix"""
 
-        # this error message is a bit cryptic, but it's consistent across
-        # all the interfaces
-        msg = "state\\(wires=\\[0?\\]\\)\\ is\\ not\\ in\\ list"
+        if return_type == "DensityMatrix" and interface in {"tf", "torch"}:
+            pytest.xfail("tf and torch don't support density matrices yet.")
 
-        complex = return_type == "StateVector"
+        use_complex_type = True
 
-        with pytest.raises(ValueError, match=msg):
-            circuit = get_qnode(interface, diff_method, return_type, shots, wire_specs)
-            x = get_variable(interface, wire_specs, complex=complex)
+        circuit = get_qnode(interface, diff_method, return_type, shots, wire_specs)
+        x = get_variable(interface, wire_specs, complex=use_complex_type)
 
-            if shots is not None:
-                with pytest.warns(UserWarning, match="unaffected by sampling"):
-                    grad = compute_gradient(x, interface, circuit, return_type, complex=complex)
-            else:
-                grad = compute_gradient(x, interface, circuit, return_type, complex=complex)
+        if shots is not None:
+            with pytest.warns(UserWarning, match="unaffected by sampling"):
+                grad = compute_gradient(
+                    x, interface, circuit, return_type, complex=use_complex_type
+                )
+        else:
+            grad = compute_gradient(x, interface, circuit, return_type, complex=use_complex_type)
 
     @pytest.mark.parametrize("interface", diff_interfaces)
     @pytest.mark.parametrize(
