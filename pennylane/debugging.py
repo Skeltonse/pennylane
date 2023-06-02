@@ -88,16 +88,26 @@ def snapshots(qnode):
     """
 
     def get_snapshots(*args, **kwargs):
-        old_interface = qnode.interface
-        if old_interface == "auto":
-            qnode.interface = qml.math.get_interface(*args, *list(kwargs.values()))
+        if isinstance(qnode.device, qml.Device):
+            old_interface = qnode.interface
 
-        with _Debugger(qnode.device) as dbg:
-            results = qnode(*args, **kwargs)
-            # Reset interface
             if old_interface == "auto":
-                qnode.interface = "auto"
-        dbg.snapshots["execution_results"] = results
-        return dbg.snapshots
+                qnode.interface = qml.math.get_interface(*args, *list(kwargs.values()))
+
+            with _Debugger(qnode.device) as dbg:
+                results = qnode(*args, **kwargs)
+                # Reset interface
+                if old_interface == "auto":
+                    qnode.interface = "auto"
+            dbg.snapshots["execution_results"] = results
+            return dbg.snapshots
+
+        results = qnode(*args, **kwargs)
+        snap_ops = (op for op in qnode.tape.operations if isinstance(op, qml.Snapshot))
+
+        states = {snap.tag or i: snap.state_cache[0] for i, snap in enumerate(snap_ops)}
+
+        states["execution_results"] = results
+        return states
 
     return get_snapshots

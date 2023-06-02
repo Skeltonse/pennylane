@@ -66,6 +66,7 @@ class Snapshot(Operation):
 
     def __init__(self, tag=None, do_queue=None):
         self.tag = tag
+        self.state_cache = []
         super().__init__(wires=[], do_queue=do_queue)
 
     def label(self, decimals=None, base_label=None, cache=None):

@@ -24,7 +24,7 @@ from .measure import measure
 from .sampling import measure_with_samples
 
 
-def simulate(circuit: qml.tape.QuantumScript, rng=None, debugger=None) -> Result:
+def simulate(circuit: qml.tape.QuantumScript, rng=None) -> Result:
     """Simulate a single quantum script.
 
     This is an internal function that will be called by the successor to ``default.qubit``.
@@ -34,7 +34,6 @@ def simulate(circuit: qml.tape.QuantumScript, rng=None, debugger=None) -> Result
         rng (Union[None, int, array_like[int], SeedSequence, BitGenerator, Generator]): A
             seed-like parameter matching that of ``seed`` for ``numpy.random.default_rng``.
             If no value is provided, a default RNG will be used.
-        debugger (._Debugger): The debugger to use
 
     Returns:
         tuple(TensorLike): The results of the simulation
@@ -58,7 +57,7 @@ def simulate(circuit: qml.tape.QuantumScript, rng=None, debugger=None) -> Result
     state = create_initial_state(circuit.wires, circuit._prep[0] if circuit._prep else None)
 
     for op in circuit._ops:
-        state = apply_operation(op, state, debugger=debugger)
+        state = apply_operation(op, state)
 
     if circuit.shots.total_shots is None:
         # analytic case
