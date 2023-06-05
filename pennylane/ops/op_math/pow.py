@@ -16,6 +16,7 @@ This submodule defines the symbolic operation that stands for the power of an op
 """
 import copy
 from typing import Union
+import warnings
 
 from scipy.linalg import fractional_matrix_power
 
@@ -36,7 +37,7 @@ from .symbolicop import ScalarSymbolicOp, SymbolicOp
 _superscript = str.maketrans("0123456789.+-", "⁰¹²³⁴⁵⁶⁷⁸⁹⋅⁺⁻")
 
 
-def pow(base, z=1, lazy=True, do_queue=True, id=None):
+def pow(base, z=1, lazy=True, do_queue=None, id=None):
     """Raise an Operator to a power.
 
     Args:
@@ -47,7 +48,9 @@ def pow(base, z=1, lazy=True, do_queue=True, id=None):
         lazy=True (bool): In lazy mode, all operations are wrapped in a ``Pow`` class
             and handled later. If ``lazy=False``, operation-specific simplifications are first attempted.
         do_queue (bool): indicates whether the operator should be
-            recorded when created in a tape context
+            recorded when created in a tape context.
+            This argument is deprecated, instead of setting it to ``False``
+            use :meth:`~.queuing.QueuingManager.stop_recording`.
         id (str): custom label given to an operator instance,
             can be useful for some applications where the instance has to be identified
 
@@ -90,11 +93,13 @@ def pow(base, z=1, lazy=True, do_queue=True, id=None):
 
     """
     if lazy:
-        return Pow(base, z, do_queue=do_queue, id=id)
+        t = PowOperation if isinstance(base, Operation) else Pow
+        return t(base, z, do_queue=do_queue, id=id)
     try:
         pow_ops = base.pow(z)
     except PowUndefinedError:
-        return Pow(base, z, do_queue=do_queue, id=id)
+        t = PowOperation if isinstance(base, Operation) else Pow
+        return t(base, z, do_queue=do_queue, id=id)
 
     num_ops = len(pow_ops)
     if num_ops == 0:
@@ -104,42 +109,17 @@ def pow(base, z=1, lazy=True, do_queue=True, id=None):
     else:
         pow_op = qml.prod(*pow_ops)
 
-    if do_queue:
+    if do_queue is not None:
+        do_queue_deprecation_warning = (
+            "The do_queue keyword argument is deprecated. "
+            "Instead of setting it to False, use qml.queuing.QueuingManager.stop_recording()"
+        )
+        warnings.warn(do_queue_deprecation_warning, UserWarning)
+
+    if do_queue or do_queue is None:
         QueuingManager.remove(base)
 
     return pow_op
-
-
-# pylint: disable=no-member
-class PowOperation(Operation):
-    """Operation-specific methods and properties for the ``Pow`` class.
-
-    Dynamically mixed in based on the provided base operator.  If the base operator is an
-    Operation, this class will be mixed in.
-
-    When we no longer rely on certain functionality through `Operation`, we can get rid of this
-    class.
-    """
-
-    # until we add gradient support
-    grad_method = None
-
-    @property
-    def base_name(self):
-        return self._name
-
-    @property
-    def name(self):
-        return self._name
-
-    # pylint: disable=missing-function-docstring
-    @property
-    def basis(self):
-        return self.base.basis
-
-    @property
-    def control_wires(self):
-        return self.base.control_wires
 
 
 class Pow(ScalarSymbolicOp):
@@ -166,42 +146,14 @@ class Pow(ScalarSymbolicOp):
 
     """
 
-    _operation_type = None  # type if base inherits from operation and not observable
-    _operation_observable_type = None  # type if base inherits from both operation and observable
-    _observable_type = None  # type if base inherits from observable and not oepration
+    def _flatten(self):
+        return (self.base, self.z), tuple()
 
-    # pylint: disable=unused-argument
-    def __new__(cls, base=None, z=1, do_queue=True, id=None):
-        """Mixes in parents based on inheritance structure of base.
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(data[0], z=data[1])
 
-        Though all the types will be named "Pow", their *identity* and location in memory will be
-        different based on ``base``'s inheritance.  We cache the different types in private class
-        variables so that:
-
-        """
-
-        if isinstance(base, Operation):
-            if isinstance(base, Observable):
-                if cls._operation_observable_type is None:
-                    base_classes = (PowOperation, Pow, SymbolicOp, Observable, Operation)
-                    cls._operation_observable_type = type("Pow", base_classes, dict(cls.__dict__))
-                return object.__new__(cls._operation_observable_type)
-
-            # not an observable
-            if cls._operation_type is None:
-                base_classes = (PowOperation, Pow, SymbolicOp, Operation)
-                cls._operation_type = type("Pow", base_classes, dict(cls.__dict__))
-            return object.__new__(cls._operation_type)
-
-        if isinstance(base, Observable):
-            if cls._observable_type is None:
-                base_classes = (Pow, SymbolicOp, Observable)
-                cls._observable_type = type("Pow", base_classes, dict(cls.__dict__))
-            return object.__new__(cls._observable_type)
-
-        return object.__new__(Pow)
-
-    def __init__(self, base=None, z=1, do_queue=True, id=None):
+    def __init__(self, base=None, z=1, do_queue=None, id=None):
         self.hyperparameters["z"] = z
         self._name = f"{base.name}**{z}"
 
@@ -365,3 +317,39 @@ class Pow(ScalarSymbolicOp):
             return op.simplify()
         except PowUndefinedError:
             return Pow(base=base, z=self.z)
+
+
+# pylint: disable=no-member
+class PowOperation(Pow, Operation):
+    """Operation-specific methods and properties for the ``Pow`` class.
+
+    Dynamically mixed in based on the provided base operator.  If the base operator is an
+    Operation, this class will be mixed in.
+
+    When we no longer rely on certain functionality through `Operation`, we can get rid of this
+    class.
+    """
+
+    # until we add gradient support
+    grad_method = None
+
+    @property
+    def base_name(self):
+        warnings.warn(
+            "Operation.base_name is deprecated. Please use type(obj).__name__ or obj.name instead.",
+            UserWarning,
+        )
+        return self._name
+
+    @property
+    def name(self):
+        return self._name
+
+    # pylint: disable=missing-function-docstring
+    @property
+    def basis(self):
+        return self.base.basis
+
+    @property
+    def control_wires(self):
+        return self.base.control_wires

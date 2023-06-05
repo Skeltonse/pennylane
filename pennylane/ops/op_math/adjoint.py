@@ -15,6 +15,7 @@
 This submodule defines the symbolic operation that indicates the adjoint of an operator.
 """
 from functools import wraps
+import warnings
 
 import pennylane as qml
 from pennylane.math import conj, moveaxis, transpose
@@ -23,7 +24,6 @@ from pennylane.queuing import QueuingManager
 from pennylane.tape import make_qscript
 
 from .symbolicop import SymbolicOp
-
 
 # pylint: disable=no-member
 def adjoint(fn, lazy=True):
@@ -130,7 +130,10 @@ def adjoint(fn, lazy=True):
     def wrapper(*args, **kwargs):
         qscript = make_qscript(fn)(*args, **kwargs)
         if lazy:
-            adjoint_ops = [Adjoint(op) for op in reversed(qscript.operations)]
+            adjoint_ops = [
+                AdjointOperation(op) if isinstance(op, Operation) else Adjoint(op)
+                for op in reversed(qscript.operations)
+            ]
         else:
             adjoint_ops = [_single_op_eager(op) for op in reversed(qscript.operations)]
 
@@ -146,7 +149,7 @@ def _single_op_eager(op, update_queue=False):
             QueuingManager.remove(op)
             QueuingManager.append(adj)
         return adj
-    return Adjoint(op)
+    return AdjointOperation(op) if isinstance(op, Operation) else Adjoint(op)
 
 
 # pylint: disable=too-many-public-methods
@@ -204,53 +207,14 @@ class Adjoint(SymbolicOp):
 
     """
 
-    _operation_type = None  # type if base inherits from operation and not observable
-    _operation_observable_type = None  # type if base inherits from both operation and observable
-    _observable_type = None  # type if base inherits from observable and not operation
+    def _flatten(self):
+        return (self.base,), tuple()
 
-    # pylint: disable=unused-argument
-    def __new__(cls, base=None, do_queue=True, id=None):
-        """Mixes in parents based on inheritance structure of base.
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(data[0])
 
-        Though all the types will be named "Adjoint", their *identity* and location in memory will
-        be different based on ``base``'s inheritance.  We cache the different types in private class
-        variables so that:
-
-        >>> Adjoint(op).__class__ is Adjoint(op).__class__
-        True
-        >>> type(Adjoint(op)) == type(Adjoint(op))
-        True
-        >>> Adjoint(qml.RX(1.2, wires=0)).__class__ is Adjoint._operation_type
-        True
-        >>> Adjoint(qml.PauliX(0)).__class__ is Adjoint._operation_observable_type
-        True
-
-        """
-
-        if isinstance(base, Operation):
-            if isinstance(base, Observable):
-                if cls._operation_observable_type is None:
-                    class_bases = (AdjointOperation, Adjoint, SymbolicOp, Observable, Operation)
-                    cls._operation_observable_type = type(
-                        "Adjoint", class_bases, dict(cls.__dict__)
-                    )
-                return object.__new__(cls._operation_observable_type)
-
-            # not an observable
-            if cls._operation_type is None:
-                class_bases = (AdjointOperation, Adjoint, SymbolicOp, Operation)
-                cls._operation_type = type("Adjoint", class_bases, dict(cls.__dict__))
-            return object.__new__(cls._operation_type)
-
-        if isinstance(base, Observable):
-            if cls._observable_type is None:
-                class_bases = (Adjoint, SymbolicOp, Observable)
-                cls._observable_type = type("Adjoint", class_bases, dict(cls.__dict__))
-            return object.__new__(cls._observable_type)
-
-        return object.__new__(Adjoint)
-
-    def __init__(self, base=None, do_queue=True, id=None):
+    def __init__(self, base=None, do_queue=None, id=None):
         self._name = f"Adjoint({base.name})"
         super().__init__(base, do_queue=do_queue, id=id)
 
@@ -321,7 +285,7 @@ class Adjoint(SymbolicOp):
 
 
 # pylint: disable=no-member
-class AdjointOperation(Operation):
+class AdjointOperation(Adjoint, Operation):
     """This mixin class is dynamically added to an ``Adjoint`` instance if the provided base class
     is an ``Operation``.
 
@@ -337,6 +301,10 @@ class AdjointOperation(Operation):
 
     @property
     def base_name(self):
+        warnings.warn(
+            "Operation.base_name is deprecated. Please use type(obj).__name__ or obj.name instead.",
+            UserWarning,
+        )
         return self._name
 
     @property

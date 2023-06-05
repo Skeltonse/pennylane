@@ -166,6 +166,14 @@ class Hamiltonian(Observable):
     batch_size = None
     ndim_params = None  # could be (0,) * len(coeffs), but it is not needed. Define at class-level
 
+    def _flatten(self):
+        # note that we are unable to restore grouping type or method without creating new properties
+        return (self.data, self._ops), tuple()
+
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(data[0], data[1])
+
     def __init__(
         self,
         coeffs,
@@ -174,7 +182,7 @@ class Hamiltonian(Observable):
         grouping_type=None,
         method="rlf",
         id=None,
-        do_queue=True,
+        do_queue=None,
     ):
         if qml.math.shape(coeffs)[0] != len(observables):
             raise ValueError(

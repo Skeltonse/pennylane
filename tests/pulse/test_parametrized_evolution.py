@@ -75,7 +75,7 @@ class TestInitialization:
         ops = [qml.PauliX(0), qml.PauliY(1)]
         coeffs = [1, 2]
         H = ParametrizedHamiltonian(coeffs, ops)
-        ev = ParametrizedEvolution(H=H, params=[1, 2], t=2)
+        ev = ParametrizedEvolution(H=H, params=[1, 2], t=2, dense=True)
 
         assert ev.H is H
         assert qml.math.allequal(ev.t, [0, 2])
@@ -89,6 +89,21 @@ class TestInitialization:
         assert qml.math.allequal(ev.data, [1, 2])
         assert qml.math.allequal(ev.parameters, [1, 2])
         assert ev.num_params == 2
+        assert ev.dense is True
+
+    def test_set_dense(self):
+        """Test that flag dense is set correctly"""
+        ops = [qml.PauliX(0), qml.PauliY(1), qml.PauliZ(2)]
+        coeffs = [1, 2, 3]
+        H = ParametrizedHamiltonian(coeffs, ops)
+        ev = ParametrizedEvolution(H=H, params=None, t=2)
+        assert ev.dense is False
+
+        ev2 = ParametrizedEvolution(H=H, params=None, t=2, dense=True)
+        assert ev2.dense is True
+
+        ev3 = ParametrizedEvolution(H=H, params=None, t=2, dense=False)
+        assert ev3.dense is False
 
     @pytest.mark.parametrize("ret_intmdt, comp", ([False, False], [True, False], [True, True]))
     def test_return_intermediate_and_complementary(self, ret_intmdt, comp):
@@ -333,6 +348,33 @@ class TestMatrix:
 class TestIntegration:
     """Integration tests for the ParametrizedEvolution class."""
 
+    @pytest.mark.parametrize("time", [0.3, 1, [0, 2], [0.4, 2], (3, 3.1)])
+    @pytest.mark.parametrize("time_interface", ["python", "numpy", "jax"])
+    @pytest.mark.parametrize("use_jit", [False, True])
+    def test_time_input_formats(self, time, time_interface, use_jit):
+        import jax
+        import jax.numpy as jnp
+
+        if time_interface == "jax":
+            time = jnp.array(time)
+        elif time_interface == "numpy":
+            time = np.array(time)
+        H = qml.pulse.ParametrizedHamiltonian([2], [qml.PauliX(0)])
+
+        dev = qml.device("default.qubit", wires=1)
+
+        @qml.qnode(dev, interface="jax")
+        def circuit(t):
+            qml.evolve(H)([], t)
+            return qml.expval(qml.PauliZ(0))
+
+        if use_jit:
+            circuit = jax.jit(circuit)
+
+        res = circuit(time)
+        duration = time if qml.math.ndim(time) == 0 else time[1] - time[0]
+        assert qml.math.isclose(res, qml.math.cos(4 * duration))
+
     # pylint: disable=unused-argument
     def test_time_independent_hamiltonian(self):
         """Test the execution of a time independent hamiltonian."""
@@ -498,3 +540,43 @@ class TestIntegration:
 
         assert qml.math.isclose(res_def, res_mix, atol=1e-4)
         assert qml.math.allclose(grad_def, grad_mix, atol=1e-4)
+
+    def test_jitted_unitary_differentiation_sparse(
+        self,
+    ):
+        """Test that the unitary can be differentiated with and without jitting using sparse matrices"""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        def U(params):
+            H = jnp.polyval * qml.PauliZ(0)
+            Um = qml.evolve(H)(params, t=10.0, dense=False)
+            return qml.matrix(Um)
+
+        params = jnp.array([[0.5]], dtype=complex)
+        jac = jax.jacobian(U, holomorphic=True)(params)
+        jac_jit = jax.jacobian(jax.jit(U), holomorphic=True)(params)
+
+        assert qml.math.allclose(jac, jac_jit)
+
+    def test_jitted_unitary_differentiation_dense(
+        self,
+    ):
+        """Test that the unitary can be differentiated with and without jitting using dense matrices"""
+        import jax
+        import jax.numpy as jnp
+
+        jax.config.update("jax_enable_x64", True)
+
+        def U(params):
+            H = jnp.polyval * qml.PauliZ(0)
+            Um = qml.evolve(H)(params, t=10.0, dense=True)
+            return qml.matrix(Um)
+
+        params = jnp.array([[0.5]], dtype=complex)
+        jac = jax.jacobian(U, holomorphic=True)(params)
+        jac_jit = jax.jacobian(jax.jit(U), holomorphic=True)(params)
+
+        assert qml.math.allclose(jac, jac_jit)

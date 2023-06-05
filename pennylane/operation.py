@@ -420,8 +420,9 @@ class Operator(abc.ABC):
         params (tuple[tensor_like]): trainable parameters
         wires (Iterable[Any] or Any): Wire label(s) that the operator acts on.
             If not given, args[-1] is interpreted as wires.
-        do_queue (bool): indicates whether the operator should be
-            recorded when created in a tape context
+        do_queue (bool): indicates whether the operator should be recorded when created in
+            a tape context. This argument is deprecated, instead of setting it to ``False``
+            use :meth:`~.queuing.QueuingManager.stop_recording`.
         id (str): custom label given to an operator instance,
             can be useful for some applications where the instance has to be identified
 
@@ -451,7 +452,7 @@ class Operator(abc.ABC):
             grad_method = "A"
 
             def __init__(self, angle, wire_rot, wire_flip=None, do_flip=False,
-                               do_queue=True, id=None):
+                               do_queue=None, id=None):
 
                 # checking the inputs --------------
 
@@ -475,6 +476,8 @@ class Operator(abc.ABC):
                 # The id keyword argument allows users to give their instance a custom name.
                 # The do_queue keyword argument specifies whether or not
                 # the operator is queued when created in a tape context.
+                # Note that do_queue is deprecated. In the future, please use
+                # qml.QueuingManager.stop_recording().
                 super().__init__(angle, wires=all_wires, do_queue=do_queue, id=id)
 
             @property
@@ -682,6 +685,18 @@ class Operator(abc.ABC):
                 # Deep copy everything else.
                 setattr(copied_op, attribute, copy.deepcopy(value, memo))
         return copied_op
+
+    def __init_subclass__(cls, **kwargs):
+        # for the sake of prototypetyping, I assume jax is installed
+        import jax
+
+        def flatten(op):
+            return op._flatten()
+
+        def unflatten(aux, parameters):
+            return cls._unflatten(parameters, aux)
+
+        jax.tree_util.register_pytree_node(cls, flatten, unflatten)
 
     @property
     def hash(self):
@@ -970,7 +985,7 @@ class Operator(abc.ABC):
         param_string = ",\n".join(_format(p) for p in params)
         return f"{op_label}\n({param_string})"
 
-    def __init__(self, *params, wires=None, do_queue=True, id=None):
+    def __init__(self, *params, wires=None, do_queue=None, id=None):
         # pylint: disable=too-many-branches
         self._name = self.__class__.__name__  #: str: name of the operator
         self._id = id
@@ -1023,7 +1038,14 @@ class Operator(abc.ABC):
 
         self.data = [np.array(p) if isinstance(p, (list, tuple)) else p for p in params]
 
-        if do_queue:
+        if do_queue is not None:
+            do_queue_deprecation_warning = (
+                "The do_queue keyword argument is deprecated. Instead of setting "
+                "it to False, use qml.queuing.QueuingManager.stop_recording()"
+            )
+            warnings.warn(do_queue_deprecation_warning, UserWarning)
+
+        if do_queue or do_queue is None:
             self.queue()
 
     def _check_batching(self, params):
@@ -1478,6 +1500,13 @@ class Operator(abc.ABC):
             return qml.pow(self, z=other)
         return NotImplemented
 
+    def _flatten(self):
+        return tuple(self.data), (self.wires,)
+
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(*data, wires=metadata[0])
+
 
 # =============================================================================
 # Base Operation class
@@ -1510,7 +1539,8 @@ class Operation(Operator):
         wires (Iterable[Any] or Any): Wire label(s) that the operator acts on.
             If not given, args[-1] is interpreted as wires.
         do_queue (bool): indicates whether the operator should be
-            recorded when created in a tape context
+            recorded when created in a tape context. This argument is deprecated,
+            instead of setting it to ``False`` use :meth:`~.queuing.QueuingManager.stop_recording`.
         id (str): custom label given to an operator instance,
             can be useful for some applications where the instance has to be identified
     """
@@ -1644,9 +1674,13 @@ class Operation(Operator):
     @property
     def base_name(self):
         """Holdover from when in-place inversion changed then name. To be removed."""
+        warnings.warn(
+            "Operation.base_name is deprecated. Please use type(obj).__name__ or obj.name instead.",
+            UserWarning,
+        )
         return self.__class__.__name__
 
-    def __init__(self, *params, wires=None, do_queue=True, id=None):
+    def __init__(self, *params, wires=None, do_queue=None, id=None):
         super().__init__(*params, wires=wires, do_queue=do_queue, id=id)
 
         # check the grad_recipe validity
@@ -1666,7 +1700,8 @@ class Channel(Operation, abc.ABC):
         wires (Iterable[Any] or Any): Wire label(s) that the operator acts on.
             If not given, args[-1] is interpreted as wires.
         do_queue (bool): indicates whether the operator should be
-            recorded when created in a tape context
+            recorded when created in a tape context. This argument is deprecated,
+            instead of setting it to ``False`` use :meth:`~.queuing.QueuingManager.stop_recording`.
         id (str): custom label given to an operator instance,
             can be useful for some applications where the instance has to be identified
     """
@@ -1737,7 +1772,8 @@ class Observable(Operator):
         wires (Iterable[Any] or Any): Wire label(s) that the operator acts on.
             If not given, args[-1] is interpreted as wires.
         do_queue (bool): indicates whether the operator should be
-            recorded when created in a tape context
+            recorded when created in a tape context. This argument is deprecated,
+            instead of setting it to ``False`` use :meth:`~.queuing.QueuingManager.stop_recording`.
         id (str): custom label given to an operator instance,
             can be useful for some applications where the instance has to be identified
     """
@@ -1914,6 +1950,13 @@ class Tensor(Observable):
     return_type = None
     tensor = True
     has_matrix = True
+
+    def _flatten(self):
+        return tuple(self.obs), tuple()
+
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(*data)
 
     def __init__(self, *args):  # pylint: disable=super-init-not-called
         wires = [op.wires for op in args]
@@ -2540,7 +2583,8 @@ class CVOperation(CV, Operation):
         wires (Iterable[Any] or Any): Wire label(s) that the operator acts on.
             If not given, args[-1] is interpreted as wires.
         do_queue (bool): indicates whether the operator should be
-            recorded when created in a tape context
+            recorded when created in a tape context. This argument is deprecated,
+            instead of setting it to ``False`` use :meth:`~.queuing.QueuingManager.stop_recording`.
         id (str): custom label given to an operator instance,
             can be useful for some applications where the instance has to be identified
     """
@@ -2665,7 +2709,8 @@ class CVObservable(CV, Observable):
        wires (Iterable[Any] or Any): Wire label(s) that the operator acts on.
            If not given, args[-1] is interpreted as wires.
        do_queue (bool): indicates whether the operator should be
-           recorded when created in a tape context
+           recorded when created in a tape context. This argument is deprecated,
+           instead of setting it to ``False`` use :meth:`~.queuing.QueuingManager.stop_recording`.
        id (str): custom label given to an operator instance,
            can be useful for some applications where the instance has to be identified
     """

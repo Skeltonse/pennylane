@@ -24,8 +24,8 @@ import numpy as np
 from scipy import sparse
 
 import pennylane as qml
-from pennylane import math as qmlmath
 from pennylane import operation
+from pennylane import math as qmlmath
 from pennylane.operation import Operator
 from pennylane.wires import Wires
 
@@ -85,13 +85,23 @@ def ctrl(op, control, control_values=None, work_wires=None):
     Controlled(RY(12.466370614359173, wires=[0]) @ RX(10.166370614359172, wires=[0]), control_wires=[1])
 
     """
-    control_values = [control_values] if isinstance(control_values, int) else control_values
+    custom_controlled_ops = {
+        qml.PauliZ: qml.CZ,
+        qml.PauliY: qml.CY,
+    }
+    control_values = [control_values] if isinstance(control_values, (int, bool)) else control_values
     control = qml.wires.Wires(control)
 
+    if (
+        isinstance(op, tuple(custom_controlled_ops))
+        and len(control) == 1
+        and (control_values is None or control_values[0])
+    ):
+        qml.QueuingManager.remove(op)
+        return custom_controlled_ops[type(op)](control + op.wires)
     if isinstance(op, Operator):
-        return Controlled(
-            op, control_wires=control, control_values=control_values, work_wires=work_wires
-        )
+        t = ControlledOp if isinstance(op, qml.operation.Operation) else Controlled
+        return t(op, control_wires=control, control_values=control_values, work_wires=work_wires)
     if not callable(op):
         raise ValueError(
             f"The object {op} of type {type(op)} is not an Operator or callable. "
@@ -110,7 +120,7 @@ def ctrl(op, control, control_values=None, work_wires=None):
             _ = [qml.PauliX(w) for w, val in zip(control, control_values) if not val]
 
         _ = [
-            Controlled(
+            (ControlledOp if isinstance(op, qml.operation.Operation) else Controlled)(
                 op, control_wires=control, control_values=op_control_values, work_wires=work_wires
             )
             for op in qscript.operations
@@ -141,16 +151,14 @@ class Controlled(SymbolicOp):
             Provided values are converted to `Bool` internally.
         work_wires (Any): Any auxiliary wires that can be used in the decomposition
         do_queue(bool):  indicates whether the operator should be
-            recorded when created in a tape context
+            recorded when created in a tape context.
+            This argument is deprecated, instead of setting it to ``False``
+            use :meth:`~.queuing.QueuingManager.stop_recording`.
 
     .. note::
         This class, ``Controlled``, denotes a controlled version of any individual operation.
         :class:`~.ControlledOp` adds :class:`~.Operation` specific methods and properties to the
         more general ``Controlled`` class.
-
-        The :class:`~.ControlledOperation` currently constructed by the :func:`~.ctrl` transform wraps
-        an entire tape and does not provide as many representations and attributes as ``Controlled``,
-        but :class:`~.ControlledOperation` does decompose.
 
     .. seealso:: :class:`~.ControlledOp`, and :func:`~.ctrl`
 
@@ -218,30 +226,18 @@ class Controlled(SymbolicOp):
 
     """
 
-    # pylint: disable=no-self-argument
-    @operation.classproperty
-    def __signature__(cls):  # pragma: no cover
-        # this method is defined so inspect.signature returns __init__ signature
-        # instead of __new__ signature
-        # See PEP 362
+    def _flatten(self):
+        return (self.base,), (self.control_wires, tuple(self.control_values), self.work_wires)
 
-        # use __init__ signature instead of __new__ signature
-        sig = signature(cls.__init__)
-        # get rid of self from signature
-        new_parameters = tuple(sig.parameters.values())[1:]
-        new_sig = sig.replace(parameters=new_parameters)
-        return new_sig
-
-    # pylint: disable=unused-argument
-    def __new__(cls, base, *_, **__):
-        """If base is an ``Operation``, then a ``ControlledOp`` should be used instead."""
-        if isinstance(base, operation.Operation):
-            return object.__new__(ControlledOp)
-        return object.__new__(Controlled)
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(
+            data[0], control_wires=metadata[0], control_values=metadata[1], work_wires=metadata[2]
+        )
 
     # pylint: disable=too-many-function-args
     def __init__(
-        self, base, control_wires, control_values=None, work_wires=None, do_queue=True, id=None
+        self, base, control_wires, control_values=None, work_wires=None, do_queue=None, id=None
     ):
         control_wires = Wires(control_wires)
         work_wires = Wires([]) if work_wires is None else Wires(work_wires)
@@ -368,9 +364,9 @@ class Controlled(SymbolicOp):
         new_control_wires = Wires([wire_map.get(wire, wire) for wire in self.control_wires])
         new_work_wires = Wires([wire_map.get(wire, wire) for wire in self.work_wires])
 
-        return self.__class__(
-            base=new_base,
-            control_wires=new_control_wires,
+        return ctrl(
+            op=new_base,
+            control=new_control_wires,
             control_values=self.control_values,
             work_wires=new_work_wires,
         )
@@ -517,7 +513,7 @@ class Controlled(SymbolicOp):
         return self.base.has_adjoint
 
     def adjoint(self):
-        return self.__class__(
+        return ctrl(
             self.base.adjoint(),
             self.control_wires,
             control_values=self.control_values,
@@ -527,7 +523,7 @@ class Controlled(SymbolicOp):
     def pow(self, z):
         base_pow = self.base.pow(z)
         return [
-            self.__class__(
+            ctrl(
                 op,
                 self.control_wires,
                 control_values=self.control_values,
@@ -539,15 +535,16 @@ class Controlled(SymbolicOp):
     def simplify(self) -> "Controlled":
         if isinstance(self.base, Controlled):
             base = self.base.base.simplify()
-            return self.__class__(
+            return ctrl(
                 base,
-                control_wires=self.control_wires + self.base.control_wires,
+                control=self.control_wires + self.base.control_wires,
                 control_values=self.control_values + self.base.control_values,
                 work_wires=self.work_wires + self.base.work_wires,
             )
-        return self.__class__(
-            base=self.base.simplify(),
-            control_wires=self.control_wires,
+
+        return ctrl(
+            op=self.base.simplify(),
+            control=self.control_wires,
             control_values=self.control_values,
             work_wires=self.work_wires,
         )
@@ -600,13 +597,9 @@ class ControlledOp(Controlled, operation.Operation):
     .. seealso:: :class:`~.Controlled`
     """
 
-    def __new__(cls, *_, **__):
-        # overrides dispatch behavior of ``Controlled``
-        return object.__new__(cls)
-
     # pylint: disable=too-many-function-args
     def __init__(
-        self, base, control_wires, control_values=None, work_wires=None, do_queue=True, id=None
+        self, base, control_wires, control_values=None, work_wires=None, do_queue=None, id=None
     ):
         super().__init__(base, control_wires, control_values, work_wires, do_queue, id)
         # check the grad_recipe validity
@@ -616,6 +609,10 @@ class ControlledOp(Controlled, operation.Operation):
 
     @property
     def base_name(self):
+        warnings.warn(
+            "Operation.base_name is deprecated. Please use type(obj).__name__ or obj.name instead.",
+            UserWarning,
+        )
         return f"C({self.base.base_name})"
 
     @property

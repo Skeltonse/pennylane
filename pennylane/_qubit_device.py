@@ -60,7 +60,9 @@ from pennylane.measurements import (
     VarianceMP,
     VnEntropy,
     VnEntropyMP,
+    Shots,
 )
+from pennylane.resource import Resources
 from pennylane.operation import operation_derivative, Operation
 from pennylane.tape import QuantumScript, QuantumTape
 from pennylane.wires import Wires
@@ -348,7 +350,20 @@ class QubitDevice(Device):
         self._num_executions += 1
 
         if self.tracker.active:
-            self.tracker.update(executions=1, shots=self._shots, results=results)
+            shots_from_dev = self._shots if not self.shot_vector else self._raw_shot_sequence
+            tape_resources = circuit.specs["resources"]
+
+            resources = Resources(  # temporary until shots get updated on tape !
+                tape_resources.num_wires,
+                tape_resources.num_gates,
+                tape_resources.gate_types,
+                tape_resources.gate_sizes,
+                tape_resources.depth,
+                Shots(shots_from_dev),
+            )
+            self.tracker.update(
+                executions=1, shots=self._shots, results=results, resources=resources
+            )
             self.tracker.record()
 
         return results
@@ -1289,7 +1304,7 @@ class QubitDevice(Device):
         """
         state = getattr(self, "state", None)
         wires = self.map_wires(wires)
-        return qml.math.reduced_dm(state, indices=wires, c_dtype=self.C_DTYPE)
+        return qml.math.reduce_statevector(state, indices=wires, c_dtype=self.C_DTYPE)
 
     def vn_entropy(self, wires, log_base):
         r"""Returns the Von Neumann entropy prior to measurement.
@@ -1933,9 +1948,6 @@ class QubitDevice(Device):
                 raise qml.QuantumFunctionError(
                     "Adjoint differentiation method does not support Hamiltonian observables."
                 )
-
-            if not hasattr(m.obs, "base_name"):
-                m.obs.base_name = None  # This is needed for when the observable is a tensor product
 
         if self.shot_vector is not None:
             raise qml.QuantumFunctionError("Adjoint does not support shot vectors.")

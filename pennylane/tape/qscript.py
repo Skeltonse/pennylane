@@ -42,6 +42,15 @@ from pennylane.queuing import AnnotatedQueue, process_queue
 _empty_wires = qml.wires.Wires([])
 
 
+def _warn_name():
+    warnings.warn(
+        "The ``name`` property and keyword argument of ``QuantumScript`` is deprecated and will be"
+        " removed in the next release. Going forward, please refrain from using them. This also affects"
+        " the ``QuantumTape`` and ``OperationRecorder`` classes.",
+        UserWarning,
+    )
+
+
 OPENQASM_GATES = {
     "CNOT": "cx",
     "CZ": "cz",
@@ -91,9 +100,9 @@ class QuantumScript:
         prep (Iterable[Operator]): Any state preparations to perform at the start of the circuit
 
     Keyword Args:
-        shots (None, int, Sequence[int], ~.Shots): Number and/or batches of
-            shots for execution. Note that this property is still experimental and under development.
-        name (str): a name given to the quantum script
+        shots (None, int, Sequence[int], ~.Shots): Number and/or batches of shots for execution.
+            Note that this property is still experimental and under development.
+        name (str): Deprecated way to give a name to the quantum script. Avoid using.
         _update=True (bool): Whether or not to set various properties on initialization. Setting
             ``_update=False`` reduces computations if the script is only an intermediary step.
 
@@ -173,6 +182,13 @@ class QuantumScript:
 
     """
 
+    def _flatten(self):
+        return (self._ops, self.measurements, self._prep), (self.shots,)
+
+    @classmethod
+    def _unflatten(cls, data, metadata):
+        return cls(*data, shots=metadata[0])
+
     do_queue = False
     """Whether or not to queue the object. Assumed ``False`` for a vanilla Quantum Script, but may be
     True for its child Quantum Tape."""
@@ -186,7 +202,9 @@ class QuantumScript:
         name=None,
         _update=True,
     ):  # pylint: disable=too-many-arguments
-        self.name = name
+        self._name = name
+        if name is not None:
+            _warn_name()
         self._prep = [] if prep is None else list(prep)
         self._ops = [] if ops is None else list(ops)
         self._measurements = [] if measurements is None else list(measurements)
@@ -247,6 +265,17 @@ class QuantumScript:
     # ========================================================
     # QSCRIPT properties
     # ========================================================
+
+    @property
+    def name(self):
+        """Name of the quantum script. Raises deprecation warning.
+
+        Returns:
+
+            str or None: The name given to the quantum script upon creation (if any).
+        """
+        _warn_name()
+        return self._name
 
     @property
     def interface(self):
@@ -1045,7 +1074,9 @@ class QuantumScript:
             _ops = self._ops.copy()
             _measurements = self.measurements.copy()
 
-        new_qscript = self.__class__(ops=_ops, measurements=_measurements, prep=_prep)
+        new_qscript = self.__class__(
+            ops=_ops, measurements=_measurements, prep=_prep, shots=self.shots
+        )
         new_qscript._graph = None if copy_operations else self._graph
         new_qscript._specs = None
         new_qscript.wires = copy.copy(self.wires)
@@ -1125,8 +1156,18 @@ class QuantumScript:
         """
         with qml.QueuingManager.stop_recording():
             ops_adj = [qml.adjoint(op, lazy=False) for op in reversed(self._ops)]
-        adj = self.__class__(ops=ops_adj, measurements=self.measurements, prep=self._prep)
-        if self.do_queue:
+        adj = self.__class__(
+            ops=ops_adj, measurements=self.measurements, prep=self._prep, shots=self.shots
+        )
+
+        if self.do_queue is not None:
+            do_queue_deprecation_warning = (
+                "The do_queue keyword argument is deprecated. "
+                "Instead of setting it to False, use qml.queuing.QueuingManager.stop_recording()"
+            )
+            warnings.warn(do_queue_deprecation_warning, UserWarning)
+
+        if self.do_queue or self.do_queue is None:
             qml.QueuingManager.append(adj)
         return adj
 
@@ -1204,7 +1245,7 @@ class QuantumScript:
         wires: 2
         gates: 6
         depth: 4
-        shots: 0
+        shots: Shots(total=None)
         gate_types:
         {'Hadamard': 2, 'RX': 1, 'CNOT': 2, 'Rot': 1}
         gate_sizes:
@@ -1212,16 +1253,14 @@ class QuantumScript:
         """
         if self._specs is None:
             resources = qml.resource.resource._count_resources(
-                self, shots=0
+                self
             )  # pylint: disable=protected-access
 
-            self._specs = SpecsDict(
-                {
-                    "resources": resources,
-                    "gate_sizes": defaultdict(int),
-                    "gate_types": defaultdict(int),
-                }
-            )
+            self._specs = {
+                "resources": resources,
+                "gate_sizes": defaultdict(int),
+                "gate_types": defaultdict(int),
+            }
 
             for op in self.operations:
                 # don't use op.num_wires to allow for flexible gate classes like QubitUnitary
@@ -1234,6 +1273,7 @@ class QuantumScript:
             self._specs["num_used_wires"] = self.num_wires
             self._specs["num_trainable_params"] = self.num_params
             self._specs["depth"] = resources.depth
+            self._specs = SpecsDict(self._specs)
 
         return self._specs
 
@@ -1244,7 +1284,7 @@ class QuantumScript:
         show_all_wires=False,
         decimals=None,
         max_length=100,
-        show_matrices=False,
+        show_matrices=True,
     ):
         """Draw the quantum script as a circuit diagram. See :func:`~.drawer.tape_text` for more information.
 
@@ -1255,7 +1295,7 @@ class QuantumScript:
                 Default ``None`` will omit parameters from operation labels.
             max_length (Int) : Maximum length of a individual line.  After this length, the diagram will
                 begin anew beneath the previous lines.
-            show_matrices=False (bool): show matrix valued parameters below all circuit diagrams
+            show_matrices=True (bool): show matrix valued parameters below all circuit diagrams
 
         Returns:
             str: the circuit representation of the quantum script
@@ -1381,7 +1421,7 @@ class SpecsDict(dict):
         if item in self.old_to_new_key_map:
             warnings.warn(
                 f"The {item} key is deprecated and will be removed in the next release. "
-                f'Going forward, please use: qml.specs()["resources"].{self.old_to_new_key_map[item]}'
+                f'Going forward, please use: specs["resources"].{self.old_to_new_key_map[item]}'
             )
         return super().__getitem__(item)
 
@@ -1440,3 +1480,17 @@ def make_qscript(fn, shots: Optional[Union[int, Sequence, Shots]] = None):
         return qscript
 
     return wrapper
+
+
+import jax
+
+
+def flatten(circuit):
+    return circuit._flatten()
+
+
+def unflatten(aux, parameters):
+    return QuantumScript._unflatten(parameters, aux)
+
+
+jax.tree_util.register_pytree_node(QuantumScript, flatten, unflatten)
