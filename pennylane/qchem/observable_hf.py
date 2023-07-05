@@ -88,6 +88,7 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False)
                     {FermiWord({(0, o[0]): "+", (1, o[1]): "+", (2, o[2]): "-", (3, o[3]): "-"}): c}
                 )
         sentence.simplify()
+
         return sentence
 
     return coeffs[indices_sort], sorted(operators)
