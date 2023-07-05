@@ -19,9 +19,10 @@ import pennylane as qml
 from pennylane import numpy as np
 from pennylane.pauli.utils import simplify
 from pennylane.operation import active_new_opmath
+from pennylane.fermi import FermiWord, FermiSentence
 
 
-def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12):
+def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False):
     r"""Create a fermionic observable from molecular orbital integrals.
 
     Args:
@@ -29,6 +30,7 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12):
         one (array[float]): the one-particle molecular orbital integrals
         two (array[float]): the two-particle molecular orbital integrals
         cutoff (float): cutoff value for discarding the negligible integrals
+        fs (bool): is True, a fermi sentence will be returned
 
     Returns:
         tuple(array[float], list[int]): fermionic coefficients and operators
@@ -75,6 +77,18 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12):
     indices_sort = [operators.index(i) for i in sorted(operators)]
     if indices_sort:
         indices_sort = qml.math.array(indices_sort)
+
+    if fs:
+        sentence = FermiSentence({FermiWord({}): constant[0]})
+        for c, o in zip(coeffs[indices_sort], sorted(operators)):
+            if len(o) == 2:
+                sentence.update({FermiWord({(0, o[0]): "+", (1, o[1]): "-"}): c})
+            if len(o) == 4:
+                sentence.update(
+                    {FermiWord({(0, o[0]): "+", (1, o[1]): "+", (2, o[2]): "-", (3, o[3]): "-"}): c}
+                )
+        sentence.simplify()
+        return sentence
 
     return coeffs[indices_sort], sorted(operators)
 

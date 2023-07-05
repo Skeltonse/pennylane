@@ -142,12 +142,15 @@ def electron_integrals(mol, core=None, active=None):
     return _electron_integrals
 
 
-def fermionic_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
+def fermionic_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None, fs=False):
     r"""Return a function that computes the fermionic Hamiltonian.
 
     Args:
         mol (~qchem.molecule.Molecule): the molecule object
         cutoff (float): cutoff value for discarding the negligible electronic integrals
+        core (list[int]): indices of the core orbitals
+        active (list[int]): indices of the active orbitals
+        fs (bool): is True, a fermi sentence will be returned
 
     Returns:
         function: function that computes the fermionic hamiltonian
@@ -174,7 +177,7 @@ def fermionic_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
         """
         core_constant, one, two = electron_integrals(mol, core, active)(*args)
 
-        return fermionic_observable(core_constant, one, two, cutoff)
+        return fermionic_observable(core_constant, one, two, cutoff, fs)
 
     return _fermionic_hamiltonian
 
@@ -185,6 +188,8 @@ def diff_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
     Args:
         mol (~qchem.molecule.Molecule): the molecule object
         cutoff (float): cutoff value for discarding the negligible electronic integrals
+        core (list[int]): indices of the core orbitals
+        active (list[int]): indices of the active orbitals
 
     Returns:
         function: function that computes the qubit hamiltonian
@@ -215,8 +220,8 @@ def diff_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
         Returns:
             Hamiltonian: the qubit Hamiltonian
         """
-        h_ferm = fermionic_hamiltonian(mol, cutoff, core, active)(*args)
+        h_ferm = fermionic_hamiltonian(mol, cutoff, core, active, fs=True)(*args)
 
-        return qubit_observable(h_ferm)
+        return qml.jordan_wigner(h_ferm)
 
     return _molecular_hamiltonian
