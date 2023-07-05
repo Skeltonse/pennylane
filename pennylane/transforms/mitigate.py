@@ -520,7 +520,7 @@ def mitigate_with_zne(
     ]
 
     tapes = [tape_ for tapes_ in tapes for tape_ in tapes_]  # flattens nested list
-    out_tapes = [QuantumScript(tape_.operations, tape.measurements, tape._prep) for tape_ in tapes]
+    out_tapes = [QuantumScript(tape_.operations, tape.measurements) for tape_ in tapes]
 
     def processing_fn(results):
         """Maps from input tape executions to an error-mitigated estimate"""

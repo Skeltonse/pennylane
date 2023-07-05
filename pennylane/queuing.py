@@ -556,12 +556,12 @@ def process_queue(queue: AnnotatedQueue):
         queue (.AnnotatedQueue): The queue to be processed into individual lists
 
     Returns:
-        tuple[list(.Operation), list(.MeasurementProcess)], list(.Operation):
+        tuple[list(.Operation), list(.MeasurementProcess)]
         The list of main tape operations, the list of tape measurements, and the list of preparation operations
     """
-    lists = {"_prep": [], "_ops": [], "_measurements": []}
-    list_order = {"_prep": 0, "_ops": 1, "_measurements": 2}
-    current_list = "_prep"
+    lists = { "_ops": [], "_measurements": []}
+    list_order = {"_ops": 1, "_measurements": 2}
+    current_list = "_ops"
 
     for obj, info in queue.items():
         if "owner" not in info and getattr(obj, "_queue_category", None) is not None:
@@ -574,4 +574,4 @@ def process_queue(queue: AnnotatedQueue):
                 )
             lists[obj._queue_category].append(obj)
 
-    return lists["_ops"], lists["_measurements"], lists["_prep"]
+    return lists["_ops"], lists["_measurements"]

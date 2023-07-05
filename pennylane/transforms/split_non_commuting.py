@@ -166,9 +166,8 @@ def split_non_commuting(tape):
         tapes = []
         for group in groups:
             new_tape = tape.__class__(
-                tape._ops,
+                tape.operations,
                 (m.__class__(obs=o) for m, o in zip(tape.measurements, group)),
-                tape._prep,
             )
 
             tapes.append(new_tape)

@@ -55,14 +55,11 @@ def simulate(circuit: qml.tape.QuantumScript, rng=None, debugger=None) -> Result
         wire_map = {w: i for i, w in enumerate(circuit.wires)}
         circuit = qml.map_wires(circuit, wire_map)
 
-    state = create_initial_state(circuit.wires, circuit._prep[0] if circuit._prep else None)
+    has_state_prep = bool(circuit.circuit) and isinstance(circuit[0], qml.operation.StatePrep)
+    is_state_batched = has_state_prep and circuit[0].batch_size is not None
+    state = create_initial_state(circuit.wires, circuit[0] if has_state_prep else None)
 
-    # initial state is batched only if the state preparation (if it exists) is batched
-    is_state_batched = False
-    if circuit._prep and circuit._prep[0].batch_size is not None:
-        is_state_batched = True
-
-    for op in circuit._ops:
+    for op in circuit.operations[int(has_state_prep):]:
         state = apply_operation(op, state, is_state_batched=is_state_batched, debugger=debugger)
 
         # new state is batched if i) the old state is batched, or ii) the new op adds a batch dim

@@ -171,7 +171,7 @@ class TestExpandFnValidation:
 
     def test_state_prep_only_one(self):
         """Test that a device error is raised if the script has multiple state prep ops."""
-        qs = QuantumScript(prep=[qml.BasisState([0], wires=0), qml.BasisState([1], wires=1)])
+        qs = QuantumScript([qml.BasisState([0], wires=0), qml.BasisState([1], wires=1)])
         with pytest.raises(
             DeviceError, match=r"DefaultQubit2 accepts at most one state prep operation."
         ):
@@ -462,7 +462,7 @@ class TestAdjointDiffTapeValidation:
             pnp.array([1.0, -1.0], requires_grad=False) / np.sqrt(2), wires=0
         )
         qs = QuantumScript(
-            ops=[G(np.pi, wires=[0])], measurements=[qml.expval(qml.PauliZ(0))], prep=[prep_op]
+            ops=[prep_op, G(np.pi, wires=[0])], measurements=[qml.expval(qml.PauliZ(0))]
         )
 
         qs.trainable_params = {1}
@@ -480,9 +480,8 @@ class TestAdjointDiffTapeValidation:
             pnp.array([1.0, -1.0], requires_grad=False) / np.sqrt(2), wires=0
         )
         qs = QuantumScript(
-            ops=[qml.Rot(0.1, 0.2, 0.3, wires=[0])],
+            ops=[prep_op, qml.Rot(0.1, 0.2, 0.3, wires=[0])],
             measurements=[qml.expval(qml.PauliZ(0))],
-            prep=[prep_op],
             shots=shots,
         )
 

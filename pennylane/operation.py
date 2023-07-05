@@ -1369,7 +1369,6 @@ class Operator(abc.ABC):
         used outside of ``QuantumTape._process_queue``.
 
         Options are:
-            * `"_prep"`
             * `"_ops"`
             * `"_measurements"`
             * `None`
@@ -1774,7 +1773,6 @@ class Observable(Operator):
         used outside of ``QuantumTape._process_queue``.
 
         Options are:
-            * `"_prep"`
             * `"_ops"`
             * `"_measurements"`
             * None
@@ -2730,7 +2728,6 @@ class StatePrep(Operation):
     """An interface for state-prep operations."""
 
     grad_method = None
-    _queue_category = "_prep"
 
     # pylint:disable=too-few-public-methods
     @abc.abstractmethod

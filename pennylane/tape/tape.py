@@ -168,7 +168,6 @@ def expand_tape(tape, depth=1, stop_at=None, expand_measurements=False):
         def stop_at(obj):  # pylint: disable=unused-argument
             return False
 
-    new_prep = []
     new_ops = []
     new_measurements = []
 
@@ -181,8 +180,7 @@ def expand_tape(tape, depth=1, stop_at=None, expand_measurements=False):
 
     diagonalizing_gates, diagonal_measurements = rotations_and_diagonal_measurements(tape)
     for queue, new_queue in [
-        (tape._prep, new_prep),
-        (tape._ops + diagonalizing_gates, new_ops),
+        (tape.operations + diagonalizing_gates, new_ops),
         (diagonal_measurements, new_measurements),
     ]:
         for obj in queue:
@@ -212,13 +210,12 @@ def expand_tape(tape, depth=1, stop_at=None, expand_measurements=False):
             # recursively expand out the newly created tape
             expanded_tape = expand_tape(obj, stop_at=stop_at, depth=depth - 1)
 
-            new_prep.extend(expanded_tape._prep)
             new_ops.extend(expanded_tape._ops)
             new_measurements.extend(expanded_tape._measurements)
 
     # preserves inheritance structure
     # if tape is a QuantumTape, returned object will be a quantum tape
-    new_tape = tape.__class__(new_ops, new_measurements, new_prep, shots=tape.shots, _update=False)
+    new_tape = tape.__class__(new_ops, new_measurements, shots=tape.shots, _update=False)
 
     # Update circuit info
     new_tape.wires = copy.copy(tape.wires)
@@ -412,13 +409,12 @@ class QuantumTape(QuantumScript, AnnotatedQueue):
         operations and measurement processes.
 
         Sets:
-            _prep (list[~.Operation]): Preparation operations
             _ops (list[~.Operation]): Main tape operations
             _measurements (list[~.MeasurementProcess]): Tape measurements
 
         Also calls `_update()` which sets many attributes.
         """
-        self._ops, self._measurements, self._prep = process_queue(self)
+        self._ops, self._measurements = process_queue(self)
         self._update()
 
     def __getitem__(self, key):

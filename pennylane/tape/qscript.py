@@ -97,7 +97,6 @@ class QuantumScript:
     Args:
         ops (Iterable[Operator]): An iterable of the operations to be performed
         measurements (Iterable[MeasurementProcess]): All the measurements to be performed
-        prep (Iterable[Operator]): Any state preparations to perform at the start of the circuit
 
     Keyword Args:
         shots (None, int, Sequence[int], ~.Shots): Number and/or batches of shots for execution.
@@ -121,7 +120,7 @@ class QuantumScript:
                qml.CNOT((0,"a")),
                qml.RX(0.133, "a")]
 
-        qscript = QuantumScript(ops, [qml.expval(qml.PauliZ(0))], prep)
+        qscript = QuantumScript(prep+ops, [qml.expval(qml.PauliZ(0))])
 
     >>> list(qscript)
     [BasisState(array([1, 1]), wires=[0, "a"]),
@@ -198,8 +197,7 @@ class QuantumScript:
         self._name = name
         if name is not None:
             _warn_name()
-        self._prep = [] if prep is None else list(prep)
-        self._ops = [] if ops is None else list(ops)
+        self._ops = ([] if prep is None else list(prep)) + ([] if ops is None else list(ops))
         self._measurements = [] if measurements is None else list(measurements)
         self._shots = Shots(shots)
 
@@ -307,7 +305,7 @@ class QuantumScript:
         >>> qscript.operations
         [QubitStateVector([0, 1], wires=[0]), RX(0.432, wires=[0])]
         """
-        return self._prep + self._ops
+        return self._ops
 
     @property
     def observables(self) -> List[Union[MeasurementProcess, Observable]]:
@@ -1066,19 +1064,17 @@ class QuantumScript:
             # Perform a shallow copy of all operations in the state prep, operation, and measurement
             # queues. The operations will continue to share data with the original script operations
             # unless modified.
-            _prep = [copy.copy(op) for op in self._prep]
             _ops = [copy.copy(op) for op in self._ops]
             _measurements = [copy.copy(op) for op in self.measurements]
         else:
             # Perform a shallow copy of the state prep, operation, and measurement queues. The
             # operations within the queues will be references to the original script operations;
             # changing the original operations will always alter the operations on the copied script.
-            _prep = self._prep.copy()
             _ops = self._ops.copy()
             _measurements = self.measurements.copy()
 
         new_qscript = self.__class__(
-            ops=_ops, measurements=_measurements, prep=_prep, shots=self.shots
+            ops=_ops, measurements=_measurements, shots=self.shots
         )
         new_qscript._graph = None if copy_operations else self._graph
         new_qscript._specs = None
@@ -1160,7 +1156,7 @@ class QuantumScript:
         with qml.QueuingManager.stop_recording():
             ops_adj = [qml.adjoint(op, lazy=False) for op in reversed(self._ops)]
         adj = self.__class__(
-            ops=ops_adj, measurements=self.measurements, prep=self._prep, shots=self.shots
+            ops=ops_adj, measurements=self.measurements, shots=self.shots
         )
 
         if self.do_queue is not None:

@@ -63,11 +63,12 @@ def adjoint_jacobian(tape: QuantumTape):  # pylint: disable=too-many-statements
         tape = qml.map_wires(tape, wire_map)
 
     # Initialization of state
-    prep_operation = None if len(tape._prep) == 0 else tape._prep[0]
-    ket = create_initial_state(
-        wires=tape.wires, prep_operation=prep_operation
-    )  #  ket(0) if prep_operation is None, else
-    for op in tape._ops:
+    has_state_prep = isinstance(tape[0], qml.operation.StatePrep)
+    prep_operation = tape[0] if has_state_prep else None
+
+    #  ket(0) if prep_operation is None, else
+    ket = create_initial_state(wires=tape.wires, prep_operation=prep_operation) 
+    for op in tape.operations[has_state_prep:]:
         ket = apply_operation(op, ket)
 
     n_obs = len(tape.observables)
@@ -79,7 +80,7 @@ def adjoint_jacobian(tape: QuantumTape):  # pylint: disable=too-many-statements
 
     param_number = len(tape.get_parameters(trainable_only=False, operations_only=True)) - 1
     trainable_param_number = len(tape.trainable_params) - 1
-    for op in reversed(tape._ops):
+    for op in reversed(tape.operations[has_state_prep:]):
         adj_op = qml.adjoint(op)
         ket = apply_operation(adj_op, ket)
 
