@@ -241,6 +241,8 @@ def diff_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
 
         h = h.hamiltonian()
 
-        return qml.Hamiltonian(qml.math.real(h.coeffs), h.ops)
+        return qml.Hamiltonian(
+            qml.math.real(h.coeffs), [qml.Identity(0) if o.name == "Identity" else o for o in h.ops]
+        )
 
     return _molecular_hamiltonian
