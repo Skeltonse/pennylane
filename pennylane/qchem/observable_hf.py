@@ -20,6 +20,7 @@ from pennylane import numpy as np
 from pennylane.pauli.utils import simplify
 from pennylane.operation import active_new_opmath
 from pennylane.fermi import FermiWord, FermiSentence
+import warnings
 
 
 def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False):
@@ -30,7 +31,7 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False)
         one (array[float]): the one-particle molecular orbital integrals
         two (array[float]): the two-particle molecular orbital integrals
         cutoff (float): cutoff value for discarding the negligible integrals
-        fs (bool): is True, a fermi sentence will be returned
+        fs (bool): if True, a fermi sentence will be returned
 
     Returns:
         tuple(array[float], list[int]): fermionic coefficients and operators
@@ -91,6 +92,11 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False)
 
         return sentence
 
+    warnings.warn(
+        "This function will return a FermiSentence by default in the next release.",
+        UserWarning,
+    )
+
     return coeffs[indices_sort], sorted(operators)
 
 
@@ -126,6 +132,12 @@ def qubit_observable(o_ferm, cutoff=1.0e-12):
     >>> print(qubit_observable(f))
     Identity(wires=[0]) + ((-1+0j)*(PauliZ(wires=[0])))
     """
+    warnings.warn(
+        "This function will be deprecated in the next release. Please use pennylane.jordan_wigner"
+        " instead.",
+        UserWarning,
+    )
+
     ops = []
     coeffs = qml.math.array([])
 
@@ -179,4 +191,9 @@ def jordan_wigner(op: list, notation="physicist"):  # pylint:disable=too-many-br
     >>> q # corresponds to :math:`\frac{1}{2}(I_0 - Z_0)`
     ([(0.5+0j), (-0.5+0j)], [Identity(wires=[0]), PauliZ(wires=[0])])
     """
+    warnings.warn(
+        "This function will be deprecated in the next release. Please use pennylane.jordan_wigner"
+        " instead.",
+        UserWarning,
+    )
     return qml.fermi.jordan_wigner(op, notation=notation)
