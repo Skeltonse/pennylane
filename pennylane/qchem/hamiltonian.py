@@ -16,7 +16,10 @@ This module contains the functions needed for computing the molecular Hamiltonia
 """
 # pylint: disable= too-many-branches, too-many-arguments, too-many-locals, too-many-nested-blocks
 
+import warnings
+
 import pennylane as qml
+from pennylane.operation import active_new_opmath
 
 from .hartree_fock import nuclear_energy, scf
 from .observable_hf import fermionic_observable, qubit_observable
@@ -175,6 +178,10 @@ def fermionic_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None, fs=False)
         Returns:
             tuple(array[float], list[list[int]]): the Hamiltonian coefficients and operators
         """
+        warnings.warn(
+            "This function will return a FermiSentence by default in the next release.",
+            UserWarning,
+        )
         core_constant, one, two = electron_integrals(mol, core, active)(*args)
 
         return fermionic_observable(core_constant, one, two, cutoff, fs)
@@ -225,7 +232,15 @@ def diff_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
         # return qml.qchem.qubit_observable(h_ferm)
 
         h_ferm = fermionic_hamiltonian(mol, cutoff, core, active, fs=True)(*args)
-        print(qml.jordan_wigner(h_ferm, ps=True).hamiltonian())
-        return qml.jordan_wigner(h_ferm, ps=True).hamiltonian()
+
+        h = qml.jordan_wigner(h_ferm, ps=True)
+        h.simplify()
+
+        if active_new_opmath():
+            return h.operation()
+
+        h = h.hamiltonian()
+
+        return qml.Hamiltonian(qml.math.real(h.coeffs), h.ops)
 
     return _molecular_hamiltonian
