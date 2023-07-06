@@ -146,8 +146,7 @@ def qubit_observable(o_ferm, cutoff=1.0e-12):
         )
 
     warnings.warn(
-        "This function will be deprecated in the next release. Please use pennylane.jordan_wigner"
-        " instead.",
+        "This function will only accept a FermiSentence as input in the next release.",
         UserWarning,
     )
 

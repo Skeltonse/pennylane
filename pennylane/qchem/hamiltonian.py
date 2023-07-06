@@ -228,9 +228,6 @@ def diff_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
             Hamiltonian: the qubit Hamiltonian
         """
 
-        # h_ferm = fermionic_hamiltonian(mol, cutoff, core, active, fs=False)(*args)
-        # return qml.qchem.qubit_observable(h_ferm)
-
         h_ferm = fermionic_hamiltonian(mol, cutoff, core, active, fs=True)(*args)
 
         return qubit_observable(h_ferm)
