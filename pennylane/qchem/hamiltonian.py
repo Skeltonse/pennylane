@@ -233,16 +233,6 @@ def diff_hamiltonian(mol, cutoff=1.0e-12, core=None, active=None):
 
         h_ferm = fermionic_hamiltonian(mol, cutoff, core, active, fs=True)(*args)
 
-        h = qml.jordan_wigner(h_ferm, ps=True)
-        h.simplify()
-
-        if active_new_opmath():
-            return h.operation()
-
-        h = h.hamiltonian()
-
-        return qml.Hamiltonian(
-            qml.math.real(h.coeffs), [qml.Identity(0) if o.name == "Identity" else o for o in h.ops]
-        )
+        return qubit_observable(h_ferm)
 
     return _molecular_hamiltonian

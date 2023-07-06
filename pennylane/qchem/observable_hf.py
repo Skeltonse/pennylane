@@ -132,6 +132,19 @@ def qubit_observable(o_ferm, cutoff=1.0e-12):
     >>> print(qubit_observable(f))
     Identity(wires=[0]) + ((-1+0j)*(PauliZ(wires=[0])))
     """
+    if isinstance(o_ferm, FermiSentence):
+        h = qml.jordan_wigner(o_ferm, ps=True)
+        h.simplify()
+
+        if active_new_opmath():
+            return h.operation()
+
+        h = h.hamiltonian()
+
+        return qml.Hamiltonian(
+            qml.math.real(h.coeffs), [qml.Identity(0) if o.name == "Identity" else o for o in h.ops]
+        )
+
     warnings.warn(
         "This function will be deprecated in the next release. Please use pennylane.jordan_wigner"
         " instead.",
