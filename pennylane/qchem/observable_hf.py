@@ -93,8 +93,9 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False)
         return sentence
 
     warnings.warn(
-        "This function will return a FermiSentence by default in the next release.",
-        UserWarning,
+        "This function will return a FermiSentence by default in the next release. For details, see"
+        " the Fermionic Operators tutorial:"
+        " https://pennylane.ai/qml/demos/tutorial_fermionic_operators"
     )
 
     return coeffs[indices_sort], sorted(operators)
@@ -146,8 +147,9 @@ def qubit_observable(o_ferm, cutoff=1.0e-12):
         )
 
     warnings.warn(
-        "This function will only accept a FermiSentence as input in the next release.",
-        UserWarning,
+        "Tuple input for the qubit_observable function is deprecated; please use the fermionic"
+        " operators format. For details, see the Fermionic Operators tutorial:"
+        " https://pennylane.ai/qml/demos/tutorial_fermionic_operators"
     )
 
     ops = []
@@ -203,9 +205,5 @@ def jordan_wigner(op: list, notation="physicist"):  # pylint:disable=too-many-br
     >>> q # corresponds to :math:`\frac{1}{2}(I_0 - Z_0)`
     ([(0.5+0j), (-0.5+0j)], [Identity(wires=[0]), PauliZ(wires=[0])])
     """
-    warnings.warn(
-        "This function will be deprecated in the next release. Please use pennylane.jordan_wigner"
-        " instead.",
-        UserWarning,
-    )
+
     return qml.fermi.jordan_wigner(op, notation=notation)
