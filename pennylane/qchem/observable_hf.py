@@ -93,8 +93,8 @@ def fermionic_observable(constant, one=None, two=None, cutoff=1.0e-12, fs=False)
         return sentence
 
     warnings.warn(
-        "This function will return a FermiSentence by default in the next release. For details, see"
-        " the Fermionic Operators tutorial:"
+        "This function will return a fermionic operator by default in the next release. For details,"
+        " see the Fermionic Operators tutorial:"
         " https://pennylane.ai/qml/demos/tutorial_fermionic_operators"
     )
 
