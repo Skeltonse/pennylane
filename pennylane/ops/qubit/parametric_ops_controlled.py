@@ -26,6 +26,8 @@ from pennylane.wires import Wires
 from .non_parametric_ops import Hadamard, PauliX, PauliY, PauliZ
 from .parametric_ops_single_qubit import _can_replace, stack_last, RY, RZ, PhaseShift
 
+import itertools
+
 
 class ControlledPhaseShift(Operation):
     r"""
@@ -1493,3 +1495,42 @@ class CRot(Operation):
             return qml.ctrl(Hadamard(wires=target_wires), control=self.control_wires)
 
         return CRot(p0, p1, p2, wires=wires)
+
+class SELECT(Operation):
+    def __init__(self, states, unitaries, control_wires, wires, do_queue=None, id=None):
+        super().__init__(states, unitaries, control_wires, wires=wires, do_queue=do_queue, id=id)
+
+    def compute_decomposition(*params,wires):
+        unitaries = params[2]
+        states=params[1]
+        control_wires = params[3]
+        target_wires = wires
+
+        decomp_ops= [
+            qml.ControlledQubitUnitary(unitaries[index],control_wires,target_wires,
+            control_values=np.atleast_1d(control_values)) #control_values = [1,0] or [0,1]
+            for index, control_values
+            in enumerate(states)
+            ]
+            
+        return decomp_ops
+
+class SELECT2(Operation):
+    def __init__(self, unitaries, control_wires, wires, do_queue=None, id=None):
+        super().__init__(unitaries, control_wires, wires=wires, do_queue=do_queue, id=id)
+
+    def compute_decomposition(*params,wires):
+        unitaries = params[1]
+        control_wires = params[2]
+        target_wires = wires
+
+        states = list(itertools.product([0,1],repeat=len(control_wires)))
+
+        decomp_ops= [
+            qml.ControlledQubitUnitary(unitaries[index],control_wires,target_wires,
+            control_values=np.atleast_1d(control_values)) #control_values = [1,0] or [0,1]
+            for index, control_values
+            in enumerate(states)
+            ]
+            
+        return decomp_ops

@@ -299,3 +299,78 @@ class QubitDensityMatrix(Operation):
 
     # This is a temporary attribute to fix the operator queuing behaviour
     _queue_category = "_prep"
+
+class PREP(Operation):
+    r"""Prepare function."""
+    num_wires=AnyWires
+    num_params=1
+    """int: Number of trainable parameters that the operator depends on."""
+
+    ndim_params = (1,)
+    """int: Number of dimensions per trainable parameter of the operator."""
+
+    def __init__(self, state, wires, do_queue=None, id=None):
+        wires = Wires(wires)
+        super().__init__(state, wires=wires, do_queue=do_queue, id=id)
+        return None
+
+    @staticmethod
+    def compute_matrix(state):
+        r"""Representation of the operator as a canonical matrix in the computational basis (static method).
+
+        The canonical matrix is the textbook matrix representation that does not consider wires.
+        Implicitly, this assumes that the wires of the operator correspond to the global wire order.
+
+        .. seealso:: :meth:`~.PREP.matrix`
+
+        Args:
+            *params (list): trainable parameters of the operator, as stored in the ``parameters`` attribute
+            **hyperparams (dict): non-trainable hyperparameters of the operator, as stored in the ``hyperparameters`` attribute
+
+
+        Returns:
+            tensor_like: canonical matrix
+
+        **Example**
+
+        >>> state = np.array([0.5, 0.5, 0.5, 0.5])
+        >>> 
+        tensor([[0.1, 0.2],
+                [0.3, 0.4]])
+        >>> qml.BlockEncode.compute_matrix(A, subspace=[2,2,4])
+        array([[ 0.1       ,  0.2       ,  0.97283788, -0.05988708],
+               [ 0.3       ,  0.4       , -0.05988708,  0.86395228],
+               [ 0.94561648, -0.07621992, -0.1       , -0.3       ],
+               [-0.07621992,  0.89117368, -0.2       , -0.4       ]])
+        """
+        U = np.eye(len(state),dtype=complex)
+        U[:, 0] = state
+        if state[0] == 1:
+            U=np.eye(len(state),dtype=complex)
+        else:
+            U = -np.linalg.qr(U,mode='complete')[0]
+        return U
+
+    @staticmethod
+    def compute_decomposition(state, wires):
+        r"""Representation of the operator as a product of other operators (static method). :
+
+        .. math:: O = O_1 O_2 \dots O_n.
+
+
+        .. seealso:: :meth:`~.QubitStateVector.decomposition`.
+
+        Args:
+            state (array[complex]): a state vector of size 2**len(wires)
+            wires (Iterable, Wires): the wire(s) the operation acts on
+
+        Returns:
+            list[Operator]: decomposition into lower level operations
+
+        **Example:**
+
+        >>> qml.PREP.compute_decomposition(np.array([1, 0, 0, 0]), wires=range(2))
+        [MottonenStatePreparation(tensor([1, 0, 0, 0], requires_grad=True), wires=[0, 1])]
+
+        """
+        return [MottonenStatePreparation(state, wires)]

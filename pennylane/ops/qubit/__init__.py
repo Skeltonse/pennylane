@@ -110,6 +110,9 @@ ops = {
     "FermionicSWAP",
     "Barrier",
     "WireCut",
+    "PREP",
+    "SELECT",
+    "SELECT2",
 }
 
 
