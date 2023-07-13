@@ -184,7 +184,7 @@ class QuantumScript:
         self._measurements = [] if measurements is None else list(measurements)
         self._shots = Shots(shots)
 
-        self._par_info = []
+        self._par_info = None
         """list[dict[str, Operator or int]]: Parameter information.
         Values are dictionaries containing the corresponding operation and operation parameter index."""
 
@@ -385,10 +385,10 @@ class QuantumScript:
         self._graph = None
         self._specs = None
         self._update_circuit_info()  # Updates wires, num_wires, is_sampled, all_sampled; O(ops+obs)
-        self._update_par_info()  # Updates _par_info; O(ops+obs)
+        # self._update_par_info()  # Updates _par_info; O(ops+obs)
 
         # The following line requires _par_info to be up to date
-        self._update_trainable_params()  # Updates the _trainable_params; O(1)
+        # self._update_trainable_params()  # Updates the _trainable_params; O(1)
 
         self._update_observables()  # Updates _obs_sharing_wires and _obs_sharing_wires_id
         self._update_batch_size()  # Updates _batch_size; O(ops)
@@ -436,6 +436,8 @@ class QuantumScript:
                     for i, d in enumerate(m.obs.data)
                 )
 
+        self._trainable_params = list(range(len(self._par_info)))
+
     def _update_trainable_params(self):
         """Set the trainable parameters
 
@@ -444,7 +446,7 @@ class QuantumScript:
 
         Call `_update_par_info` before `_update_trainable_params`
         """
-        self._trainable_params = list(range(len(self._par_info)))
+        self._update_par_info()
 
     def _update_observables(self):
         """Update information about observables, including the wires that are acted upon and
@@ -571,6 +573,8 @@ class QuantumScript:
         if any(not isinstance(i, int) or i < 0 for i in param_indices):
             raise ValueError("Argument indices must be non-negative integers.")
 
+        if self._par_info is None:
+            self._update_par_info()
         num_params = len(self._par_info)
         if any(i > num_params for i in param_indices):
             raise ValueError(f"Quantum Script only has {num_params} parameters.")
@@ -633,6 +637,8 @@ class QuantumScript:
         >>> qscript.get_parameters(trainable_only=False)
         [0.432, 0.543, 0.133]
         """
+        if self._par_info is None:
+            self._update_par_info()
         if trainable_only:
             params = []
             for p_idx in self.trainable_params:
@@ -691,6 +697,8 @@ class QuantumScript:
         >>> qscript.get_parameters(trainable_only=False)
         [4, 1, 6]
         """
+        if self._par_info is None:
+            self._update_par_info()
         if trainable_only:
             iterator = zip(self.trainable_params, params)
             required_length = self.num_params
@@ -1052,11 +1060,11 @@ class QuantumScript:
         )
         new_qscript._graph = None if copy_operations else self._graph
         new_qscript._specs = None
+        new_qscript._par_info = None
         new_qscript.wires = copy.copy(self.wires)
         new_qscript.num_wires = self.num_wires
         new_qscript.is_sampled = self.is_sampled
         new_qscript.all_sampled = self.all_sampled
-        new_qscript._update_par_info()
         new_qscript.trainable_params = self.trainable_params.copy()
         new_qscript._obs_sharing_wires = self._obs_sharing_wires
         new_qscript._obs_sharing_wires_id = self._obs_sharing_wires_id
@@ -1178,6 +1186,8 @@ class QuantumScript:
         Returns:
             .CircuitGraph: the circuit graph object
         """
+        if self._par_info is None:
+            self._update_par_info()
         if self._graph is None:
             self._graph = qml.CircuitGraph(
                 self.operations, self.observables, self.wires, self._par_info, self.trainable_params
