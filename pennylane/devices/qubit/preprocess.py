@@ -30,6 +30,7 @@ from pennylane.measurements import (
     ExpectationMP,
     ClassicalShadowMP,
     ShadowExpvalMP,
+    StateMP,
 )
 from pennylane.typing import ResultBatch, Result
 from pennylane import DeviceError
@@ -142,8 +143,16 @@ def validate_and_expand_adjoint(
             trainable_params.append(k)
 
     # Check validity of measurements
-    measurements = []
     for m in circuit.measurements:
+
+        if isinstance(m, StateMP):
+            if len(circuit.measurements) > 1:
+                return DeviceError(
+                    "Adjoint differentiation method does not support "
+                    f"measurement {m.__class__.__name__}."
+                )
+            break
+
         if not isinstance(m, ExpectationMP):
             return DeviceError(
                 "Adjoint differentiation method does not support "
@@ -155,9 +164,7 @@ def validate_and_expand_adjoint(
                 f"Adjoint differentiation method does not support observable {m.obs.name}."
             )
 
-        measurements.append(m)
-
-    expanded_tape = qml.tape.QuantumScript(new_ops, measurements, prep, circuit.shots)
+    expanded_tape = qml.tape.QuantumScript(new_ops, circuit.measurements, prep, circuit.shots)
     expanded_tape.trainable_params = trainable_params
 
     return expanded_tape

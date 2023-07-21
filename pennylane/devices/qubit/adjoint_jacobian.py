@@ -48,6 +48,27 @@ def _get_output_ket(tape):
     return ket
 
 
+def _adjoint_jacobian_state(tape: QuantumTape):
+    jacobian = []
+
+    has_state_prep = isinstance(tape[0], qml.operation.StatePrep)
+    state = create_initial_state(tape.wires, tape[0] if has_state_prep else None)
+
+    param_idx = has_state_prep
+    for op in tape.operations[has_state_prep:]:
+
+        jacobian = [apply_operation(op, jac) for jac in jacobian]
+
+        if param_idx in tape.trainable_params:
+            d_op_matrix = operation_derivative(op)
+            jacobian.append(apply_operation(qml.QubitUnitary(d_op_matrix, wires=op.wires), state))
+
+        param_idx += 1
+        state = apply_operation(op, state)
+
+    return tuple(jac.flatten() for jac in jacobian)
+
+
 def adjoint_jacobian(tape: QuantumTape):
     """Implements the adjoint method outlined in
     `Jones and Gacon <https://arxiv.org/abs/2009.02823>`__ to differentiate an input tape.
@@ -76,6 +97,9 @@ def adjoint_jacobian(tape: QuantumTape):
     if set(tape.wires) != set(range(tape.num_wires)):
         wire_map = {w: i for i, w in enumerate(tape.wires)}
         tape = qml.map_wires(tape, wire_map)
+
+    if isinstance(tape.measurements[0], qml.measurements.StateMP):
+        return _adjoint_jacobian_state(tape)
 
     ket = _get_output_ket(tape)
 
