@@ -192,7 +192,7 @@ class ExpvalCost:
                 device = [device] * len(coeffs)
 
             for obs, dev in zip(observables, device):
-                wires = dev.wires
+                wires = getattr(dev, "wires", hamiltonian.wires)
 
                 @qml.qnode(
                     dev,  # pylint: disable=cell-var-from-loop

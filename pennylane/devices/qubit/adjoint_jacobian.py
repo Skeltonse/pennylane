@@ -89,6 +89,8 @@ def adjoint_jacobian(tape: QuantumTape):
     param_number = len(tape.get_parameters(trainable_only=False, operations_only=True)) - 1
     trainable_param_number = len(tape.trainable_params) - 1
     for op in reversed(tape._ops):
+        if op.name == "Snapshot":
+            continue
         adj_op = qml.adjoint(op)
         ket = apply_operation(adj_op, ket)
 

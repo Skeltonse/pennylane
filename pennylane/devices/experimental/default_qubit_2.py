@@ -136,7 +136,7 @@ class DefaultQubit2(Device):
         """The name of the device."""
         return "default.qubit.2"
 
-    def __init__(self, shots=None, seed=None, max_workers=None) -> None:
+    def __init__(self, wires=None, shots=None, seed=None, max_workers=None) -> None:
         super().__init__(shots=shots)
         self._max_workers = max_workers
         self._rng = np.random.default_rng(seed)

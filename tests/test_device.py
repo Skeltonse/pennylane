@@ -24,6 +24,8 @@ import pennylane as qml
 from pennylane import Device, DeviceError
 from pennylane.wires import Wires
 
+from pennylane.devices import DefaultQubit
+
 mock_device_paulis = ["PauliX", "PauliY", "PauliZ"]
 
 # pylint: disable=abstract-class-instantiated, no-self-use, redefined-outer-name, invalid-name
@@ -819,7 +821,7 @@ class TestDeviceInit:
         with monkeypatch.context() as m:
             m.setattr(qml, "version", lambda: "0.0.1")
             with pytest.raises(DeviceError, match="plugin requires PennyLane versions"):
-                qml.device("default.qubit", wires=0)
+                DefaultQubit(wires=0)
 
     @pytest.mark.skip(reason="Reloading PennyLane messes with tape mode")
     def test_refresh_entrypoints(self, monkeypatch):
@@ -862,11 +864,11 @@ class TestDeviceInit:
 
             # since there are no entry points, there will be no plugin devices
             with pytest.raises(DeviceError, match="Device does not exist"):
-                qml.device("default.qubit", wires=0)
+                DefaultQubit(wires=0)
 
         # outside of the context, entrypoints will now be found automatically
         assert not qml.plugin_devices
-        dev = qml.device("default.qubit", wires=0)
+        dev = DefaultQubit(wires=0)
         assert qml.plugin_devices
         assert dev.short_name == "default.qubit"
 
@@ -876,7 +878,7 @@ class TestDeviceInit:
 
     def test_shot_vector_property(self):
         """Tests shot vector initialization."""
-        dev = qml.device("default.qubit", wires=1, shots=[1, 3, 3, 4, 4, 4, 3])
+        dev = DefaultQubit(wires=1, shots=[1, 3, 3, 4, 4, 4, 3])
         shot_vector = dev.shot_vector
         assert len(shot_vector) == 4
         assert shot_vector[0].shots == 1

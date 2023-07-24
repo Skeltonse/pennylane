@@ -303,6 +303,7 @@ def device(name, *args, **kwargs):
         refresh_devices()
 
     if name in plugin_devices:
+
         options = {}
 
         # load global configuration settings if available
@@ -325,13 +326,9 @@ def device(name, *args, **kwargs):
         options.update(kwargs)
 
         # loads the device class
+        if name == "default.qubit" and not active_return():
+            return pennylane.devices.DefaultQubit(*args, **options)
         plugin_device_class = plugin_devices[name].load()
-
-        if Version(version()) not in SimpleSpec(plugin_device_class.pennylane_requires):
-            raise DeviceError(
-                f"The {name} plugin requires PennyLane versions {plugin_device_class.pennylane_requires}, "
-                f"however PennyLane version {__version__} is installed."
-            )
 
         # Construct the device
         dev = plugin_device_class(*args, **options)

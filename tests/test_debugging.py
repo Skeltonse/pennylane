@@ -190,10 +190,7 @@ class TestSnapshot:
 
     def test_unsupported_device(self):
         """Test that an error is raised on unsupported devices."""
-        dev = qml.device("default.qubit", wires=2)
-        # remove attributes to simulate unsupported device
-        delattr(dev, "_debugger")
-        dev.operations.remove("Snapshot")
+        dev = qml.device("lightning.qubit", wires=2)
 
         @qml.qnode(dev, interface=None)  # iterface=None prevents new device creation internally
         def circuit():

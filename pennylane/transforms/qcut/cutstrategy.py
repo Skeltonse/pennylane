@@ -125,22 +125,27 @@ class CutStrategy:
         if devices is None and self.max_free_wires is None:
             raise ValueError("One of arguments `devices` and max_free_wires` must be provided.")
 
-        if isinstance(devices, qml.Device):
+        if isinstance(devices, (qml.Device, qml.devices.experimental.Device)):
             devices = (devices,)
 
         if devices is not None:
             if not isinstance(devices, SequenceType) or any(
-                (not isinstance(d, qml.Device) for d in devices)
+                (not isinstance(d, (qml.Device, qml.devices.experimental.Device)) for d in devices)
             ):
                 raise ValueError(
                     "Argument `devices` must be a list or tuple containing elements of type "
                     "`qml.Device`"
                 )
 
-            device_wire_sizes = [len(d.wires) for d in devices]
+            if any(isinstance(d, qml.Device) for d in devices):
+                device_wire_sizes = [len(d.wires) for d in devices]
 
-            self.max_free_wires = self.max_free_wires or max(device_wire_sizes)
-            self.min_free_wires = self.min_free_wires or min(device_wire_sizes)
+                self.max_free_wires = self.max_free_wires or max(device_wire_sizes)
+                self.min_free_wires = self.min_free_wires or min(device_wire_sizes)
+
+            else:
+                self.max_free_wires = self.max_free_wires
+                self.min_free_wires = self.min_free_wires
 
         if (self.imbalance_tolerance is not None) and not (
             isinstance(self.imbalance_tolerance, (float, int)) and self.imbalance_tolerance >= 0
