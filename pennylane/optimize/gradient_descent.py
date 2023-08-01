@@ -64,8 +64,8 @@ class GradientDescentOptimizer:
 
         # unwrap from list if one argument, cleaner return
         if len(new_args) == 1:
-            return new_args[0], forward
-        return new_args, forward
+            return new_args[0], forward, g
+        return new_args, forward, g
 
     def step(self, objective_fn, *args, grad_fn=None, **kwargs):
         """Update trainable arguments with one step of the optimizer.
